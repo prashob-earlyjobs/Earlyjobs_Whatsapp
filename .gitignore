@@ -32,6 +32,9 @@ lerna-debug.log*
 .env.test.local
 .env.production.local
 
+Backend/.env
+FrontEnd/.env
+
 # IDE and editor files
 .vscode/*
 !.vscode/extensions.json

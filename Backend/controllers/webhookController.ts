@@ -8,6 +8,8 @@ import { IWebhookIncoming, validateWebhookIncoming } from '../models/WebhookInco
 export class WebhookController {
   // POST /api/webhooks/gupshup/incoming - Handle incoming WhatsApp messages
   static async handleIncomingMessage(req: Request, res: Response) {
+    console.log('📥 Incoming webhook received:', JSON.stringify(req.body, null, 2));
+
     try {
       console.log('📥 Incoming webhook received:', JSON.stringify(req.body, null, 2));
 
