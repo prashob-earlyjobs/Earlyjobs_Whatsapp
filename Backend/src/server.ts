@@ -4,7 +4,7 @@ import app from './app';  // Import the configured app
 
 dotenv.config();
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 
 // Start server function
 const startServer = async () => {
