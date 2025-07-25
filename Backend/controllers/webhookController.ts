@@ -8,10 +8,28 @@ import { IWebhookIncoming, validateWebhookIncoming } from '../models/WebhookInco
 export class WebhookController {
   // POST /api/webhooks/gupshup/incoming - Handle incoming WhatsApp messages
   static async handleIncomingMessage(req: Request, res: Response) {
-    console.log('📥 Incoming webhook received:', JSON.stringify(req.body, null, 2));
-
     try {
-      console.log('📥 Incoming webhook received:', JSON.stringify(req.body, null, 2));
+      console.log('📥 Incoming webhook received:');
+      console.log('Headers:', JSON.stringify(req.headers, null, 2));
+      console.log('Body:', JSON.stringify(req.body, null, 2));
+      console.log('Content-Type:', req.get('Content-Type'));
+
+      // Check if req.body exists and is not empty
+      if (!req.body || typeof req.body !== 'object') {
+        console.error('❌ Request body is missing or invalid:', { 
+          bodyType: typeof req.body, 
+          body: req.body,
+          contentType: req.get('Content-Type')
+        });
+        return res.status(400).json({
+          success: false,
+          message: 'Request body is missing or invalid. Expected JSON object.',
+          received: {
+            bodyType: typeof req.body,
+            contentType: req.get('Content-Type')
+          }
+        });
+      }
 
       // Validate webhook signature (optional but recommended for security)
       const signature = req.headers['x-gupshup-signature'] as string;
@@ -22,22 +40,26 @@ export class WebhookController {
         });
       }
 
+      // Safe destructuring with default values
       const { 
-        waNumber,
-        mobile,
-        name,
-        text,
-        type,
-        timestamp,
-        image
-      } = req.body;
+        waNumber = '',
+        mobile = '',
+        name = '',
+        text = '',
+        type = '',
+        timestamp = '',
+        image = ''
+      } = req.body || {};
+
+      console.log('📝 Extracted fields:', { waNumber, mobile, name, text, type, timestamp, image });
 
       // Validate required fields using the model validator
       if (!validateWebhookIncoming(req.body)) {
         console.error('❌ Missing or invalid required fields in webhook:', { waNumber, mobile, name, text, type, timestamp });
         return res.status(400).json({
           success: false,
-          message: 'Missing or invalid required fields: waNumber, mobile, name, text, type, timestamp are mandatory'
+          message: 'Missing or invalid required fields: waNumber, mobile, name, text, type, timestamp are mandatory',
+          received: { waNumber, mobile, name, text, type, timestamp }
         });
       }
 
@@ -53,6 +75,15 @@ export class WebhookController {
 
       const phoneNumber = waNumber || mobile;
       const senderName = name;
+
+      // Additional validation
+      if (!phoneNumber) {
+        console.error('❌ No phone number provided:', { waNumber, mobile });
+        return res.status(400).json({
+          success: false,
+          message: 'Phone number is required (waNumber or mobile)'
+        });
+      }
 
       // 1. Find or create contact
       let contact;
@@ -239,9 +270,42 @@ export class WebhookController {
       message: 'Webhook endpoints are working',
       timestamp: new Date().toISOString(),
       endpoints: {
-        incoming: 'POST /api/webhooks/gupshup/incoming',
-        status: 'POST /api/webhooks/gupshup/status'
+        incoming: 'POST /api/webhooks/incoming',
+        status: 'POST /api/webhooks/status',
+        debug: 'POST /api/webhooks/debug'
       }
     });
+  }
+
+  // POST /api/webhooks/debug - Debug webhook endpoint
+  static async debugWebhook(req: Request, res: Response) {
+    try {
+      console.log('🔍 DEBUG WEBHOOK - Headers:', JSON.stringify(req.headers, null, 2));
+      console.log('🔍 DEBUG WEBHOOK - Body:', JSON.stringify(req.body, null, 2));
+      console.log('🔍 DEBUG WEBHOOK - Content-Type:', req.get('Content-Type'));
+      console.log('🔍 DEBUG WEBHOOK - Method:', req.method);
+      console.log('🔍 DEBUG WEBHOOK - URL:', req.url);
+      console.log('🔍 DEBUG WEBHOOK - Query:', JSON.stringify(req.query, null, 2));
+
+      res.status(200).json({
+        success: true,
+        message: 'Debug data logged successfully',
+        received: {
+          headers: req.headers,
+          body: req.body,
+          contentType: req.get('Content-Type'),
+          method: req.method,
+          url: req.url,
+          query: req.query
+        }
+      });
+    } catch (error: any) {
+      console.error('❌ Debug webhook error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Debug webhook error',
+        error: error.message
+      });
+    }
   }
 } 

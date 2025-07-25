@@ -1,41 +1,10 @@
-import express from 'express';
-import cors from 'cors';
-import morgan from 'morgan';
 import dotenv from 'dotenv';
 import { connectDatabase } from '../config/database';
-
-// Import route files
-import authRoutes from '../routes/auth';
-import contactRoutes from '../routes/contact';
-import conversationRoutes from '../routes/conversation';
-import bulkMessageRoutes from '../routes/bulkMessage';
-import templateRoutes from '../routes/template';
-import userRoutes from '../routes/user';
-import webhookRoutes from '../routes/webhook';
+import app from './app';  // Import the configured app
 
 dotenv.config();
 
-const app = express();
 const PORT = process.env.PORT || 5000;
-
-// Middleware
-app.use(express.json());
-app.use(cors());
-app.use(morgan('dev'));
-
-// Health check route
-app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', message: 'Server is running' });
-});
-
-// Mount all routes
-app.use('/api/auth', authRoutes);
-app.use('/api/contacts', contactRoutes);
-app.use('/api/conversations', conversationRoutes);
-app.use('/api/bulk-messages', bulkMessageRoutes);
-app.use('/api/templates', templateRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/webhooks', webhookRoutes);
 
 // Start server function
 const startServer = async () => {

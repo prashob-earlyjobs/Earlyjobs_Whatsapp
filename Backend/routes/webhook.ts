@@ -12,4 +12,7 @@ router.post('/status', WebhookController.handleStatusUpdate);
 // Test webhook endpoint
 router.get('/test', WebhookController.testWebhook);
 
+// Debug webhook endpoint
+router.post('/debug', WebhookController.debugWebhook);
+
 export default router; 
