@@ -4,6 +4,7 @@ import { ConversationService } from '../services/conversationService';
 import { MessageService } from '../services/messageService';
 import { GupshupService } from '../services/gupshupService';
 import { IWebhookIncoming, validateWebhookIncoming } from '../models/WebhookIncoming';
+import { normalizePhoneNumber, isValidPhoneNumber } from '../utils/phoneNumber';
 
 export class WebhookController {
   // POST /api/webhooks/gupshup/incoming - Handle incoming WhatsApp messages
@@ -73,17 +74,35 @@ export class WebhookController {
         });
       }
 
-      const phoneNumber = waNumber || mobile;
+      // Use mobile (contact's number) as the primary phone number
+      // waNumber is OUR business number, mobile is the CONTACT's number
+      const rawPhoneNumber = mobile ;
       const senderName = name;
 
       // Additional validation
-      if (!phoneNumber) {
+      if (!rawPhoneNumber) {
         console.error('❌ No phone number provided:', { waNumber, mobile });
         return res.status(400).json({
           success: false,
-          message: 'Phone number is required (waNumber or mobile)'
+          message: 'Contact phone number is required (mobile field)'
         });
       }
+
+      // Normalize phone number to ensure consistent format
+      const phoneNumber = normalizePhoneNumber(rawPhoneNumber);
+      
+      // Validate normalized phone number
+      if (!isValidPhoneNumber(phoneNumber)) {
+        console.error('❌ Invalid phone number format:', { original: rawPhoneNumber, normalized: phoneNumber });
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid phone number format'
+        });
+      }
+
+      console.log('📞 Contact phone number (normalized):', phoneNumber);
+      console.log('🏢 Business WhatsApp number:', waNumber);
+      console.log('📱 Original vs Normalized:', { original: rawPhoneNumber, normalized: phoneNumber });
 
       // 1. Find or create contact
       let contact;
@@ -110,11 +129,21 @@ export class WebhookController {
 
       // 2. Find or create conversation
       let conversation;
+      let conversationInfo: { isNew: boolean; wasReopened: boolean } = { isNew: false, wasReopened: false };
       try {
-        conversation = await ConversationService.createConversation({
+        const result = await ConversationService.findOrCreateConversation({
           contactId: contact._id as string
         });
-        console.log('✅ Conversation ready:', conversation._id);
+        conversation = result.conversation;
+        conversationInfo = { isNew: result.isNew, wasReopened: result.wasReopened };
+        
+        if (result.isNew) {
+          console.log('✅ New conversation created:', conversation._id);
+        } else if (result.wasReopened) {
+          console.log('🔄 Conversation reopened:', conversation._id);
+        } else {
+          console.log('♻️ Using existing conversation:', conversation._id);
+        }
       } catch (error: any) {
         console.error('❌ Error handling conversation:', error);
         return res.status(500).json({
@@ -191,7 +220,12 @@ export class WebhookController {
           data: {
             messageId: message._id,
             conversationId: conversation._id,
-            contactId: contact._id
+            contactId: contact._id,
+            conversationStatus: {
+              isNew: conversationInfo.isNew,
+              wasReopened: conversationInfo.wasReopened,
+              action: conversationInfo.isNew ? 'created' : conversationInfo.wasReopened ? 'reopened' : 'reused'
+            }
           }
         });
 

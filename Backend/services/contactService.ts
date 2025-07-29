@@ -1,4 +1,5 @@
 import Contact, { IContact } from '../models/Contact';
+import { normalizePhoneNumber } from '../utils/phoneNumber';
 
 export interface CreateContactData {
   phoneNumber: string;
@@ -18,12 +19,18 @@ export interface ContactFilters {
 
 export class ContactService {
   static async createContact(contactData: CreateContactData): Promise<IContact> {
-    const existingContact = await Contact.findOne({ phoneNumber: contactData.phoneNumber });
+    // Normalize phone number before checking/saving
+    const normalizedPhoneNumber = normalizePhoneNumber(contactData.phoneNumber);
+    
+    const existingContact = await Contact.findOne({ phoneNumber: normalizedPhoneNumber });
     if (existingContact) {
       throw new Error('Contact with this phone number already exists');
     }
 
-    const contact = new Contact(contactData);
+    const contact = new Contact({
+      ...contactData,
+      phoneNumber: normalizedPhoneNumber
+    });
     return await contact.save();
   }
 
@@ -32,7 +39,9 @@ export class ContactService {
   }
 
   static async getContactByPhone(phoneNumber: string): Promise<IContact | null> {
-    return await Contact.findOne({ phoneNumber }).populate('assignedTo', 'name email');
+    // Normalize phone number before searching
+    const normalizedPhoneNumber = normalizePhoneNumber(phoneNumber);
+    return await Contact.findOne({ phoneNumber: normalizedPhoneNumber }).populate('assignedTo', 'name email');
   }
 
   static async updateContact(contactId: string, updateData: Partial<IContact>): Promise<IContact | null> {

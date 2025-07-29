@@ -1,10 +1,168 @@
 import { Request, Response } from 'express';
 import { ConversationService, ConversationFilters, CreateConversationData } from '../services/conversationService';
 import { MessageService, CreateMessageData } from '../services/messageService';
+import { ContactService, CreateContactData } from '../services/contactService';
 import { GupshupService } from '../services/gupshupService';
 import { AuthRequest } from '../middleware/auth';
+import { normalizePhoneNumber, isValidPhoneNumber } from '../utils/phoneNumber';
 
 export class ConversationController {
+  // POST /api/conversations/start - Start new conversation with phone number
+  static async startConversationWithPhone(req: AuthRequest, res: Response) {
+    try {
+      // Check if request body exists
+      if (!req.body || typeof req.body !== 'object') {
+        return res.status(400).json({
+          success: false,
+          message: 'Request body is required and must be valid JSON'
+        });
+      }
+
+      const { phoneNumber, name, email, initialMessage } = req.body;
+      const userId = req.user?.id;
+
+      // Validation
+      if (!phoneNumber) {
+        return res.status(400).json({
+          success: false,
+          message: 'Phone number is required to start a conversation'
+        });
+      }
+
+      if (!name) {
+        return res.status(400).json({
+          success: false,
+          message: 'Contact name is required'
+        });
+      }
+
+      // Type validation
+      if (typeof phoneNumber !== 'string' || typeof name !== 'string') {
+        return res.status(400).json({
+          success: false,
+          message: 'Phone number and name must be strings'
+        });
+      }
+
+      // Normalize phone number to ensure consistent format
+      const normalizedPhoneNumber = normalizePhoneNumber(phoneNumber);
+      
+      // Validate phone number format
+      if (!isValidPhoneNumber(normalizedPhoneNumber)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Please provide a valid phone number'
+        });
+      }
+
+      // Check if contact already exists
+      let contact = await ContactService.getContactByPhone(normalizedPhoneNumber);
+      
+      if (!contact) {
+        // Create new contact
+        const contactData: CreateContactData = {
+          phoneNumber: normalizedPhoneNumber,
+          name: name.trim(),
+          email: email?.trim(),
+          assignedTo: userId
+        };
+
+        try {
+          contact = await ContactService.createContact(contactData);
+        } catch (error: any) {
+          if (error.message === 'Contact with this phone number already exists') {
+            // Race condition - contact was created between check and creation
+            contact = await ContactService.getContactByPhone(normalizedPhoneNumber);
+          } else {
+            throw error;
+          }
+        }
+      }
+
+      // Find or create conversation for this contact
+      const conversationData: CreateConversationData = {
+        contactId: contact!._id as string,
+        assignedTo: userId
+      };
+
+      const result = await ConversationService.findOrCreateConversation(conversationData);
+      const conversation = result.conversation;
+      
+      let message = 'Conversation started successfully';
+      if (!result.isNew && !result.wasReopened) {
+        message = 'Using existing conversation';
+      } else if (result.wasReopened) {
+        message = 'Conversation reopened successfully';
+      }
+
+      // Send initial message if provided
+      let sentMessage = null;
+      if (initialMessage && initialMessage.trim()) {
+        try {
+          // Send message via Gupshup
+          const gupshupResponse = await GupshupService.sendTextMessage(
+            normalizedPhoneNumber,
+            initialMessage.trim()
+          );
+
+          // Save message to database
+          const messageData: CreateMessageData = {
+            conversationId: conversation._id as string,
+            contactId: contact!._id as string,
+            senderId: userId,
+            messageId: gupshupResponse.messageId,
+            type: 'text',
+            content: { text: initialMessage.trim() },
+            direction: 'outbound',
+            timestamp: new Date()
+          };
+
+          sentMessage = await MessageService.createMessage(messageData);
+        } catch (gupshupError: any) {
+          console.error('Failed to send initial message:', gupshupError);
+          // Don't fail the conversation creation if message sending fails
+        }
+      }
+
+      res.status(201).json({
+        success: true,
+        message: message,
+        data: {
+          conversation,
+          contact,
+          isNew: result.isNew,
+          wasReopened: result.wasReopened,
+          conversationAction: result.isNew ? 'created' : result.wasReopened ? 'reopened' : 'reused',
+          initialMessageSent: !!sentMessage
+        }
+      });
+
+    } catch (error: any) {
+      console.error('Start conversation error:', error);
+      
+      if (error.message === 'Contact not found') {
+        return res.status(404).json({
+          success: false,
+          message: error.message
+        });
+      }
+
+      // Handle validation errors
+      if (error.name === 'ValidationError') {
+        return res.status(400).json({
+          success: false,
+          message: 'Validation error',
+          errors: Object.values(error.errors).map((err: any) => err.message)
+        });
+      }
+
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error while starting conversation'
+      });
+    }
+  }
+
   // POST /api/conversations
   static async createConversation(req: AuthRequest, res: Response) {
     try {
@@ -46,13 +204,20 @@ export class ConversationController {
         assignedTo: assignedTo?.trim()
       };
 
-      const conversation = await ConversationService.createConversation(conversationData);
+      const result = await ConversationService.findOrCreateConversation(conversationData);
+
+      const message = result.isNew ? 'Conversation created successfully' : 
+                     result.wasReopened ? 'Conversation reopened successfully' : 
+                     'Using existing conversation';
 
       res.status(201).json({
         success: true,
-        message: 'Conversation ready',
+        message: message,
         data: {
-          conversation
+          conversation: result.conversation,
+          isNew: result.isNew,
+          wasReopened: result.wasReopened,
+          conversationAction: result.isNew ? 'created' : result.wasReopened ? 'reopened' : 'reused'
         }
       });
 

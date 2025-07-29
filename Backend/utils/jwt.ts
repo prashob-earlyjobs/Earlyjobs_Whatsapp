@@ -9,16 +9,20 @@ export interface TokenPayload {
 
 export const generateToken = (payload: TokenPayload): string => {
   const secret = process.env.JWT_SECRET!;
-  // Default to 7 days (7 * 24 * 60 * 60 seconds)
-  const expiresIn = process.env.JWT_EXPIRES_IN ? parseInt(process.env.JWT_EXPIRES_IN, 10) : 7 * 24 * 60 * 60;
+  // Increased to 30 days (30 * 24 * 60 * 60 seconds)
+  const expiresIn = process.env.JWT_EXPIRES_IN ? parseInt(process.env.JWT_EXPIRES_IN, 10) : 30 * 24 * 60 * 60;
+  
+  console.log(`🔐 Generating access token with ${expiresIn} seconds expiry (${expiresIn / (24 * 60 * 60)} days)`);
   
   return jwt.sign(payload, secret, { expiresIn });
 };
 
 export const generateRefreshToken = (payload: TokenPayload): string => {
   const secret = process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET!;
-  // 30 days in seconds (30 * 24 * 60 * 60)
-  const expiresIn = 30 * 24 * 60 * 60;
+  // Increased to 90 days in seconds (90 * 24 * 60 * 60)
+  const expiresIn = 90 * 24 * 60 * 60;
+  
+  console.log(`🔄 Generating refresh token with ${expiresIn} seconds expiry (${expiresIn / (24 * 60 * 60)} days)`);
   
   return jwt.sign(payload, secret, { expiresIn });
 };

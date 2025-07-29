@@ -4,6 +4,9 @@ import { authenticateToken } from '../middleware/auth';
 
 const router = Router();
 
+// POST /api/conversations/start - Start new conversation with phone number
+router.post('/start', authenticateToken, ConversationController.startConversationWithPhone);
+
 // POST /api/conversations
 router.post('/', authenticateToken, ConversationController.createConversation);
 

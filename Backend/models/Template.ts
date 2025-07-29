@@ -39,7 +39,7 @@ const TemplateSchema = new Schema<ITemplate>({
   name: { type: String, required: true },
   category: { type: String, required: true },
   language: { type: String, required: true },
-  status: { type: String, enum: ['approved', 'pending', 'rejected'], default: 'pending' },
+  status: { type: String, enum: ['approved', 'pending', 'rejected'], default: 'approved' },
   templateId: { type: String, required: true },
   header: {
     type: { type: String, enum: ['text', 'image', 'document'] },

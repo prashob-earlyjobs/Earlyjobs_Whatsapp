@@ -160,12 +160,24 @@ export class AuthController {
         password 
       });
 
-      const refreshToken = generateRefreshToken({
+      console.log('🔐 Login successful for user:', user.email);
+      console.log('📊 Environment variables check:', {
+        JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN,
+        NODE_ENV: process.env.NODE_ENV
+      });
+
+      const tokenPayload = {
         id: (user._id as any).toString(),
         email: user.email,
         role: user.role,
         permissions: user.permissions
-      });
+      };
+
+      console.log('🎟️ Generating access token...');
+      const accessToken = generateToken(tokenPayload);
+      
+      console.log('🔄 Generating refresh token...');
+      const refreshToken = generateRefreshToken(tokenPayload);
 
       // Remove password from response
       const userResponse = {
@@ -178,12 +190,14 @@ export class AuthController {
         permissions: user.permissions
       };
 
+      console.log('✅ Login response prepared successfully');
+
       res.json({
         success: true,
         message: 'Login successful',
         data: {
           user: userResponse,
-          token,
+          token: accessToken,
           refreshToken
         }
       });
@@ -471,6 +485,8 @@ export class AuthController {
         });
       }
 
+      console.log('🔄 Token refresh request received');
+
       const decoded = verifyRefreshToken(refreshToken);
 
       // Verify user still exists and is active
@@ -482,6 +498,8 @@ export class AuthController {
         });
       }
 
+      console.log('🎟️ Generating new access token for user:', user.email);
+
       // Generate new access token
       const newToken = generateToken({
         id: decoded.id,
@@ -489,6 +507,8 @@ export class AuthController {
         role: user.role,
         permissions: user.permissions
       });
+
+      console.log('✅ New token generated successfully');
 
       res.json({
         success: true,
