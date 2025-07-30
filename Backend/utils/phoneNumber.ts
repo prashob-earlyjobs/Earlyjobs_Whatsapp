@@ -4,7 +4,7 @@
 
 /**
  * Normalize phone number to a consistent format
- * Removes spaces, dashes, parentheses and ensures consistent international format
+ * Removes spaces, dashes, parentheses and ensures consistent international format with + prefix
  */
 export function normalizePhoneNumber(phoneNumber: string): string {
   if (!phoneNumber) {
@@ -19,6 +19,12 @@ export function normalizePhoneNumber(phoneNumber: string): string {
     normalized = '+' + normalized.substring(1).replace(/\+/g, '');
   } else {
     normalized = normalized.replace(/\+/g, '');
+  }
+
+  // Add + prefix for valid international numbers that don't have it
+  // Only add + if the number is at least 10 digits and starts with a valid digit
+  if (!normalized.startsWith('+') && normalized.length >= 10 && /^[1-9]/.test(normalized)) {
+    normalized = '+' + normalized;
   }
 
   // Add logging for debugging

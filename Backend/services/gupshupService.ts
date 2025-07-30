@@ -39,8 +39,8 @@ export interface GupshupTemplateResponse {
 export class GupshupService {
   // Gateway API configuration
   private static baseUrl = 'https://mediaapi.smsgupshup.com/GatewayAPI/rest';
-  private static userid = process.env.GUPSHUP_USER_ID || '2000254194';
-  private static password = process.env.GUPSHUP_PASSWORD || 'h7ZkLBDE';
+  private static userid = process.env.GUPSHUP_USER_ID || '2000254195';
+  private static password = process.env.GUPSHUP_PASSWORD || 'gEGtMs6B';
 
   // HSM Template API configuration
   private static hsmBaseUrl = 'https://wamedia.smsgupshup.com/GatewayAPI/rest';
