@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { userApi, UserData, UserStats, CreateUserData } from '@/lib/api';
@@ -72,6 +72,12 @@ export const UserManagement = () => {
   };
 
   const handleCreateUser = async () => {
+    // Validate required fields
+    if (!newUser.name.trim() || !newUser.email.trim() || !newUser.password.trim()) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
     try {
       const response = await userApi.createUser(newUser);
       if (response.success) {
@@ -155,25 +161,30 @@ export const UserManagement = () => {
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Add New User</DialogTitle>
+          <DialogDescription>
+            Create a new user account with appropriate role and permissions.
+          </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4">
+        <form onSubmit={(e) => { e.preventDefault(); handleCreateUser(); }} className="space-y-4">
           <div>
-            <Label htmlFor="name">Full Name</Label>
+            <Label htmlFor="name">Full Name *</Label>
             <Input 
               id="name" 
               placeholder="Enter full name" 
               value={newUser.name}
               onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
+              required
             />
           </div>
           <div>
-            <Label htmlFor="email">Email Address</Label>
+            <Label htmlFor="email">Email Address *</Label>
             <Input 
               id="email" 
               type="email" 
               placeholder="Enter email address" 
               value={newUser.email}
               onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+              required
             />
           </div>
           <div>
@@ -201,20 +212,21 @@ export const UserManagement = () => {
             />
           </div>
           <div>
-            <Label htmlFor="password">Temporary Password</Label>
+            <Label htmlFor="password">Temporary Password *</Label>
             <Input 
               id="password" 
               type="password" 
               placeholder="Enter temporary password" 
               value={newUser.password}
               onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+              required
             />
           </div>
           <div className="flex justify-end space-x-2">
-            <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleCreateUser}>Add User</Button>
+            <Button type="button" variant="outline" onClick={() => setIsAddDialogOpen(false)}>Cancel</Button>
+            <Button type="submit">Add User</Button>
           </div>
-        </div>
+        </form>
       </DialogContent>
     </Dialog>
   );
