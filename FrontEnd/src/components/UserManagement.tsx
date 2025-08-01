@@ -65,29 +65,7 @@ export const UserManagement = () => {
     }
   }, []);
 
-  const handleCreateUser = useCallback(async () => {
-    // Validate required fields
-    if (!newUser.name.trim() || !newUser.email.trim() || !newUser.password.trim()) {
-      toast.error('Please fill in all required fields');
-      return;
-    }
 
-    try {
-      const response = await userApi.createUser(newUser);
-      if (response.success) {
-        toast.success('User created successfully');
-        setIsAddDialogOpen(false);
-        setNewUser({ name: '', email: '', role: 'bde', department: '', password: '' });
-        loadUsers();
-        loadUserStats();
-      } else {
-        toast.error(response.message || 'Failed to create user');
-      }
-    } catch (error) {
-      console.error('Error creating user:', error);
-      toast.error('Failed to create user');
-    }
-  }, [newUser, loadUsers, loadUserStats]);
 
   const handleDeleteUser = async (userId: string) => {
     if (!confirm('Are you sure you want to delete this user?')) return;
