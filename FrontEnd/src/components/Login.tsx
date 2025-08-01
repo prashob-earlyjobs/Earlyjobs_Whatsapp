@@ -1,24 +1,19 @@
 import React, { useState } from 'react';
-import { Eye, EyeOff, User, Lock, Mail, Building, Shield } from 'lucide-react';
+import { Eye, EyeOff, Lock, Mail } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/contexts/AuthContext';
-import { LoginData, RegisterData } from '@/lib/auth-api';
+import { LoginData } from '@/lib/auth-api';
 
 export const Login: React.FC = () => {
-  const { login, register, isLoading, error, clearError } = useAuth();
-  const [isLoginMode, setIsLoginMode] = useState(true);
+  const { login, isLoading, error, clearError } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
-    name: '',
     email: '',
     password: '',
-    role: '' as 'admin' | 'bde' | 'hr' | 'franchise' | 'tech' | '',
-    department: '',
   });
 
   const handleInputChange = (field: string, value: string) => {
@@ -30,46 +25,19 @@ export const Login: React.FC = () => {
     e.preventDefault();
     
     try {
-      if (isLoginMode) {
-        const loginData: LoginData = {
-          email: formData.email,
-          password: formData.password,
-        };
-        await login(loginData);
-      } else {
-        const registerData: RegisterData = {
-          name: formData.name,
-          email: formData.email,
-          password: formData.password,
-          role: formData.role as 'admin' | 'bde' | 'hr' | 'franchise' | 'tech',
-          department: formData.department || undefined,
-        };
-        await register(registerData);
-      }
+      const loginData: LoginData = {
+        email: formData.email,
+        password: formData.password,
+      };
+      await login(loginData);
     } catch (error) {
       // Error is handled by the auth context
       console.error('Authentication error:', error);
     }
   };
 
-  const toggleMode = () => {
-    setIsLoginMode(!isLoginMode);
-    setFormData({
-      name: '',
-      email: '',
-      password: '',
-      role: '',
-      department: '',
-    });
-    if (error) clearError();
-  };
-
   const isFormValid = () => {
-    if (isLoginMode) {
-      return formData.email && formData.password;
-    } else {
-      return formData.name && formData.email && formData.password && formData.role;
-    }
+    return formData.email && formData.password;
   };
 
   return (
@@ -84,13 +52,10 @@ export const Login: React.FC = () => {
             />
           </div>
           <CardTitle className="text-2xl font-bold text-center">
-            {isLoginMode ? 'Welcome Back' : 'Create Account'}
+            Welcome Back
           </CardTitle>
           <CardDescription className="text-center">
-            {isLoginMode 
-              ? 'Sign in to your EarlyJobs WhatsApp Portal account'
-              : 'Join the EarlyJobs WhatsApp Portal team'
-            }
+            Sign in to your EarlyJobs WhatsApp Portal account
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -102,24 +67,7 @@ export const Login: React.FC = () => {
               </Alert>
             )}
 
-            {/* Name Field (Register only) */}
-            {!isLoginMode && (
-              <div className="space-y-2">
-                <Label htmlFor="name">Full Name</Label>
-                <div className="relative">
-                  <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="name"
-                    type="text"
-                    placeholder="Enter your full name"
-                    value={formData.name}
-                    onChange={(e) => handleInputChange('name', e.target.value)}
-                    className="pl-10"
-                    required={!isLoginMode}
-                  />
-                </div>
-              </div>
-            )}
+
 
             {/* Email Field */}
             <div className="space-y-2">
@@ -162,46 +110,7 @@ export const Login: React.FC = () => {
               </div>
             </div>
 
-            {/* Role Field (Register only) */}
-            {!isLoginMode && (
-              <div className="space-y-2">
-                <Label htmlFor="role">Role</Label>
-                <Select
-                  value={formData.role}
-                  onValueChange={(value) => handleInputChange('role', value)}
-                  required={!isLoginMode}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select your role" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="admin">Admin</SelectItem>
-                    <SelectItem value="bde">Business Development Executive</SelectItem>
-                    <SelectItem value="hr">HR Manager</SelectItem>
-                    <SelectItem value="franchise">Franchise Manager</SelectItem>
-                    <SelectItem value="tech">Technical Support</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
 
-            {/* Department Field (Register only) */}
-            {!isLoginMode && (
-              <div className="space-y-2">
-                <Label htmlFor="department">Department (Optional)</Label>
-                <div className="relative">
-                  <Building className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="department"
-                    type="text"
-                    placeholder="Enter your department"
-                    value={formData.department}
-                    onChange={(e) => handleInputChange('department', e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-              </div>
-            )}
 
             {/* Submit Button */}
             <Button
@@ -212,27 +121,14 @@ export const Login: React.FC = () => {
               {isLoading ? (
                 <div className="flex items-center space-x-2">
                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                  <span>{isLoginMode ? 'Signing in...' : 'Creating account...'}</span>
+                  <span>Signing in...</span>
                 </div>
               ) : (
-                isLoginMode ? 'Sign In' : 'Create Account'
+                'Sign In'
               )}
             </Button>
 
-            {/* Toggle Mode */}
-            <div className="text-center">
-              <button
-                type="button"
-                onClick={toggleMode}
-                className="text-sm text-muted-foreground hover:text-foreground underline"
-                disabled={isLoading}
-              >
-                {isLoginMode
-                  ? "Don't have an account? Sign up"
-                  : 'Already have an account? Sign in'
-                }
-              </button>
-            </div>
+
           </form>
         </CardContent>
       </Card>
