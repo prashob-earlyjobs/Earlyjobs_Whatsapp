@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Plus, Search, Edit, Trash2, Users, Shield, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -34,7 +34,7 @@ export const UserManagement = () => {
     loadUserStats();
   }, []);
 
-  const loadUsers = async () => {
+  const loadUsers = useCallback(async () => {
     try {
       setLoading(true);
       console.log('🔄 Loading users...');
@@ -53,9 +53,9 @@ export const UserManagement = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const loadUserStats = async () => {
+  const loadUserStats = useCallback(async () => {
     try {
       console.log('🔄 Loading user stats...');
       const response = await userApi.getUserStats();
@@ -69,9 +69,9 @@ export const UserManagement = () => {
     } catch (error) {
       console.error('❌ Error loading user stats:', error);
     }
-  };
+  }, []);
 
-  const handleCreateUser = async () => {
+  const handleCreateUser = useCallback(async () => {
     // Validate required fields
     if (!newUser.name.trim() || !newUser.email.trim() || !newUser.password.trim()) {
       toast.error('Please fill in all required fields');
@@ -93,7 +93,7 @@ export const UserManagement = () => {
       console.error('Error creating user:', error);
       toast.error('Failed to create user');
     }
-  };
+  }, [newUser, loadUsers, loadUserStats]);
 
   const handleDeleteUser = async (userId: string) => {
     if (!confirm('Are you sure you want to delete this user?')) return;
@@ -150,7 +150,36 @@ export const UserManagement = () => {
     }
   };
 
-  const AddUserDialog = () => (
+  const handleSubmit = useCallback((e: React.FormEvent) => {
+    e.preventDefault();
+    handleCreateUser();
+  }, [handleCreateUser]);
+
+  const handleNameChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setNewUser(prev => ({ ...prev, name: e.target.value }));
+  }, []);
+
+  const handleEmailChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setNewUser(prev => ({ ...prev, email: e.target.value }));
+  }, []);
+
+  const handleRoleChange = useCallback((value: string) => {
+    setNewUser(prev => ({ ...prev, role: value as any }));
+  }, []);
+
+  const handleDepartmentChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setNewUser(prev => ({ ...prev, department: e.target.value }));
+  }, []);
+
+  const handlePasswordChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setNewUser(prev => ({ ...prev, password: e.target.value }));
+  }, []);
+
+  const handleCloseDialog = useCallback(() => {
+    setIsAddDialogOpen(false);
+  }, []);
+
+  const AddUserDialog = useCallback(() => (
     <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
       <DialogTrigger asChild>
         <Button>
@@ -165,14 +194,14 @@ export const UserManagement = () => {
             Create a new user account with appropriate role and permissions.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={(e) => { e.preventDefault(); handleCreateUser(); }} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <Label htmlFor="name">Full Name *</Label>
             <Input 
               id="name" 
               placeholder="Enter full name" 
               value={newUser.name}
-              onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
+              onChange={handleNameChange}
               required
             />
           </div>
@@ -183,13 +212,13 @@ export const UserManagement = () => {
               type="email" 
               placeholder="Enter email address" 
               value={newUser.email}
-              onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+              onChange={handleEmailChange}
               required
             />
           </div>
           <div>
             <Label htmlFor="role">Role</Label>
-            <Select value={newUser.role} onValueChange={(value) => setNewUser({ ...newUser, role: value as any })}>
+            <Select value={newUser.role} onValueChange={handleRoleChange}>
               <SelectTrigger>
                 <SelectValue placeholder="Select role" />
               </SelectTrigger>
@@ -208,7 +237,7 @@ export const UserManagement = () => {
               id="department" 
               placeholder="Enter department" 
               value={newUser.department}
-              onChange={(e) => setNewUser({ ...newUser, department: e.target.value })}
+              onChange={handleDepartmentChange}
             />
           </div>
           <div>
@@ -218,18 +247,18 @@ export const UserManagement = () => {
               type="password" 
               placeholder="Enter temporary password" 
               value={newUser.password}
-              onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+              onChange={handlePasswordChange}
               required
             />
           </div>
           <div className="flex justify-end space-x-2">
-            <Button type="button" variant="outline" onClick={() => setIsAddDialogOpen(false)}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={handleCloseDialog}>Cancel</Button>
             <Button type="submit">Add User</Button>
           </div>
         </form>
       </DialogContent>
     </Dialog>
-  );
+  ), [isAddDialogOpen, newUser, handleSubmit, handleNameChange, handleEmailChange, handleRoleChange, handleDepartmentChange, handlePasswordChange, handleCloseDialog]);
 
   return (
     <div className="h-full p-6 overflow-y-auto">
