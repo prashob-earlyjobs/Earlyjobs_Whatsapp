@@ -6,6 +6,8 @@ export interface IMessageContent {
   mediaType?: string;
   templateId?: Types.ObjectId;
   templateData?: Record<string, any>;
+  header?: string;
+  footer?: string;
 }
 
 export interface IMessage extends Document {
@@ -28,6 +30,8 @@ const MessageContentSchema = new Schema<IMessageContent>({
   mediaType: { type: String },
   templateId: { type: Schema.Types.ObjectId, ref: 'Template' },
   templateData: { type: Schema.Types.Mixed },
+  header: { type: String },
+  footer: { type: String },
 }, { _id: false });
 
 const MessageSchema = new Schema<IMessage>({

@@ -1,19 +1,25 @@
-import { Response, NextFunction } from 'express';
+import { Request, Response, NextFunction } from 'express';
 import { AuthRequest } from './auth';
 
-export const requireRole = (roles: string[]) => {
+export const requireRole = (allowedRoles: string[]) => {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
     if (!req.user) {
       return res.status(401).json({ message: 'Authentication required' });
     }
 
-    if (!roles.includes(req.user.role)) {
-      return res.status(403).json({ message: 'Insufficient permissions' });
+    if (!allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({ 
+        message: 'Insufficient permissions',
+        requiredRoles: allowedRoles,
+        userRole: req.user.role
+      });
     }
 
     next();
   };
 };
+
+export const requireAdmin = requireRole(['admin']);
 
 export const requirePermission = (permission: string) => {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
@@ -22,7 +28,11 @@ export const requirePermission = (permission: string) => {
     }
 
     if (!req.user.permissions.includes(permission)) {
-      return res.status(403).json({ message: `Permission '${permission}' required` });
+      return res.status(403).json({ 
+        message: 'Insufficient permissions',
+        requiredPermission: permission,
+        userPermissions: req.user.permissions
+      });
     }
 
     next();

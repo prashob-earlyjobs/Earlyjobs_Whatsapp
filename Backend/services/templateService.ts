@@ -4,6 +4,7 @@ export interface CreateTemplateData {
   name: string;
   category: string;
   language: string;
+  department?: string;
   templateId: string;
   header?: {
     type: 'text' | 'image' | 'document';
@@ -27,6 +28,7 @@ export interface TemplateFilters {
   status?: 'approved' | 'pending' | 'rejected';
   category?: string;
   language?: string;
+  department?: string;
   createdBy?: string;
 }
 
@@ -65,6 +67,10 @@ export class TemplateService {
 
     if (filters.language) {
       query.language = filters.language;
+    }
+
+    if (filters.department) {
+      query.department = filters.department;
     }
 
     if (filters.createdBy) {

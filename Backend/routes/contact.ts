@@ -5,22 +5,16 @@ import { authenticateToken } from '../middleware/auth';
 const router = Router();
 
 // GET /api/contacts
-router.get('/', (req: Request, res: Response) => {
-  res.json({ message: 'List contacts' });
-});
+router.get('/', authenticateToken, ContactController.getAllContacts);
 
 // POST /api/contacts
 router.post('/', authenticateToken, ContactController.createContact);
 
 // GET /api/contacts/search
-router.get('/search', (req: Request, res: Response) => {
-  res.json({ message: 'Search contacts' });
-});
+router.get('/search', authenticateToken, ContactController.searchContacts);
 
 // GET /api/contacts/:id
-router.get('/:id', (req: Request, res: Response) => {
-  res.json({ message: 'Get contact by ID' });
-});
+router.get('/:id', authenticateToken, ContactController.getContactById);
 
 // PUT /api/contacts/:id
 router.put('/:id', (req: Request, res: Response) => {

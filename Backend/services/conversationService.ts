@@ -1,14 +1,17 @@
 import Conversation, { IConversation } from '../models/Conversation';
 import Contact from '../models/Contact';
+import Message from '../models/Message';
 
 export interface CreateConversationData {
   contactId: string;
   assignedTo?: string;
+  department?: string;
 }
 
 export interface ConversationFilters {
   status?: 'open' | 'closed' | 'pending';
   assignedTo?: string;
+  department?: string;
   tags?: string[];
 }
 
@@ -151,6 +154,10 @@ export class ConversationService {
       query.assignedTo = filters.assignedTo;
     }
 
+    if (filters.department) {
+      query.department = filters.department;
+    }
+
     if (filters.tags && filters.tags.length > 0) {
       query.tags = { $in: filters.tags };
     }
@@ -207,5 +214,49 @@ export class ConversationService {
       { $inc: { unreadCount: 1 } },
       { new: true }
     );
+  }
+
+  static async updateLastInboundMessage(conversationId: string, timestamp: Date): Promise<IConversation | null> {
+    return await Conversation.findByIdAndUpdate(
+      conversationId,
+      { lastInboundMessageAt: timestamp },
+      { new: true }
+    );
+  }
+
+  // Check if we're within the 24-hour customer service window
+  static async isWithin24HourWindow(conversationId: string): Promise<boolean> {
+    const conversation = await Conversation.findById(conversationId);
+    if (!conversation) {
+      return false; // Conversation not found
+    }
+
+    // If lastInboundMessageAt is not set, check for recent inbound messages
+    if (!conversation.lastInboundMessageAt) {
+      const recentInboundMessage = await Message.findOne({
+        conversationId: conversationId,
+        direction: 'inbound'
+      }).sort({ timestamp: -1 });
+
+      if (!recentInboundMessage) {
+        return false; // No incoming messages yet, can't send regular messages
+      }
+
+      // Update the conversation with the most recent inbound message timestamp
+      await this.updateLastInboundMessage(conversationId, recentInboundMessage.timestamp);
+      
+      // Check if this recent message is within 24 hours
+      const now = new Date();
+      const timeDifference = now.getTime() - recentInboundMessage.timestamp.getTime();
+      const hoursElapsed = timeDifference / (1000 * 60 * 60);
+      
+      return hoursElapsed <= 24;
+    }
+
+    const now = new Date();
+    const timeDifference = now.getTime() - conversation.lastInboundMessageAt.getTime();
+    const hoursElapsed = timeDifference / (1000 * 60 * 60); // Convert to hours
+    
+    return hoursElapsed <= 24;
   }
 } 

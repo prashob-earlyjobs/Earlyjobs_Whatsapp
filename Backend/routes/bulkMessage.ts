@@ -1,30 +1,25 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
+import { BulkMessageController } from '../controllers/bulkMessageController';
+import { authenticateToken } from '../middleware/auth';
 
 const router = Router();
 
-// GET /api/bulk-messages
-router.get('/', (req: Request, res: Response) => {
-  res.json({ message: 'List bulk messages' });
-});
+// POST /api/bulk-messages/validate-contacts - Validate contacts before creating bulk message
+router.post('/validate-contacts', authenticateToken, BulkMessageController.validateContacts);
 
-// POST /api/bulk-messages
-router.post('/', (req: Request, res: Response) => {
-  res.json({ message: 'Create bulk message' });
-});
+// GET /api/bulk-messages - Get all bulk messages
+router.get('/', authenticateToken, BulkMessageController.getAllBulkMessages);
 
-// GET /api/bulk-messages/:id
-router.get('/:id', (req: Request, res: Response) => {
-  res.json({ message: 'Get bulk message by ID' });
-});
+// POST /api/bulk-messages - Create and process bulk message
+router.post('/', authenticateToken, BulkMessageController.createBulkMessage);
 
-// PUT /api/bulk-messages/:id/cancel
-router.put('/:id/cancel', (req: Request, res: Response) => {
-  res.json({ message: 'Cancel bulk message' });
-});
+// GET /api/bulk-messages/:id - Get bulk message by ID
+router.get('/:id', authenticateToken, BulkMessageController.getBulkMessageById);
 
-// GET /api/bulk-messages/:id/status
-router.get('/:id/status', (req: Request, res: Response) => {
-  res.json({ message: 'Get bulk message status' });
-});
+// GET /api/bulk-messages/:id/status - Get bulk message status
+router.get('/:id/status', authenticateToken, BulkMessageController.getBulkMessageStatus);
+
+// PUT /api/bulk-messages/:id/cancel - Cancel bulk message
+router.put('/:id/cancel', authenticateToken, BulkMessageController.cancelBulkMessage);
 
 export default router; 

@@ -1,30 +1,34 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
+import { UserController } from '../controllers/userController';
+import { authenticateToken } from '../middleware/auth';
 
 const router = Router();
 
-// GET /api/users
-router.get('/', (req: Request, res: Response) => {
-  res.json({ message: 'List users' });
+// GET /api/users - Get all users
+router.get('/', authenticateToken, UserController.getAllUsers);
+
+// Test route without authentication
+router.get('/test', (req, res) => {
+  res.json({ 
+    success: true, 
+    message: 'User API is working',
+    timestamp: new Date().toISOString()
+  });
 });
 
-// POST /api/users
-router.post('/', (req: Request, res: Response) => {
-  res.json({ message: 'Create user' });
-});
+// GET /api/users/stats - Get user statistics
+router.get('/stats', authenticateToken, UserController.getUserStats);
 
-// GET /api/users/:id
-router.get('/:id', (req: Request, res: Response) => {
-  res.json({ message: 'Get user by ID' });
-});
+// POST /api/users - Create new user
+router.post('/', authenticateToken, UserController.createUser);
 
-// PUT /api/users/:id
-router.put('/:id', (req: Request, res: Response) => {
-  res.json({ message: 'Update user' });
-});
+// GET /api/users/:id - Get user by ID
+router.get('/:id', authenticateToken, UserController.getUserById);
 
-// DELETE /api/users/:id
-router.delete('/:id', (req: Request, res: Response) => {
-  res.json({ message: 'Delete user' });
-});
+// PUT /api/users/:id - Update user
+router.put('/:id', authenticateToken, UserController.updateUser);
+
+// DELETE /api/users/:id - Delete user
+router.delete('/:id', authenticateToken, UserController.deleteUser);
 
 export default router; 

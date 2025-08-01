@@ -11,6 +11,7 @@ export interface ITemplate extends Document {
   name: string;
   category: string;
   language: string;
+  department?: string;
   status: 'approved' | 'pending' | 'rejected';
   templateId: string;
   header?: {
@@ -39,6 +40,7 @@ const TemplateSchema = new Schema<ITemplate>({
   name: { type: String, required: true },
   category: { type: String, required: true },
   language: { type: String, required: true },
+  department: { type: String },
   status: { type: String, enum: ['approved', 'pending', 'rejected'], default: 'approved' },
   templateId: { type: String, required: true },
   header: {

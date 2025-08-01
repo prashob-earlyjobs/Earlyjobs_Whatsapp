@@ -3,6 +3,7 @@ import { ConversationService, ConversationFilters, CreateConversationData } from
 import { MessageService, CreateMessageData } from '../services/messageService';
 import { ContactService, CreateContactData } from '../services/contactService';
 import { GupshupService } from '../services/gupshupService';
+import { TemplateService } from '../services/templateService';
 import { AuthRequest } from '../middleware/auth';
 import { normalizePhoneNumber, isValidPhoneNumber } from '../utils/phoneNumber';
 
@@ -508,6 +509,24 @@ export class ConversationController {
         });
       }
 
+      // ⏰ WhatsApp Business API 24-hour rule validation
+      // Only template messages can be sent outside the 24-hour customer service window
+      if (type !== 'template') {
+        const isWithinWindow = await ConversationService.isWithin24HourWindow(id);
+        if (!isWithinWindow) {
+          return res.status(403).json({
+            success: false,
+            message: 'Cannot send regular messages outside the 24-hour customer service window. Please use a template message instead.',
+            code: 'OUTSIDE_24_HOUR_WINDOW',
+            data: {
+              lastInboundMessageAt: conversation.lastInboundMessageAt,
+              canSendTemplates: true,
+              canSendRegularMessages: false
+            }
+          });
+        }
+      }
+
       let gupshupResponse;
       let messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -525,9 +544,11 @@ export class ConversationController {
               contact.phoneNumber,
               content.text
             );
+
             messageId = gupshupResponse.messageId;
             break;
 
+            
           case 'template':
             if (!content.templateId) {
               return res.status(400).json({
@@ -535,10 +556,57 @@ export class ConversationController {
                 message: 'Template ID is required for template messages'
               });
             }
+            
+            // Get template from database to render the message text
+            const template = await TemplateService.getTemplateById(content.templateId);
+            if (!template) {
+              return res.status(404).json({
+                success: false,
+                message: 'Template not found'
+              });
+            }
+            
+            // Render template text with variables
+            let renderedText = template.body.text;
+            if (content.templateData && template.body.variables) {
+              template.body.variables.forEach((variable) => {
+                const value = content.templateData[variable] || `{{${variable}}}`;
+                renderedText = renderedText.replace(new RegExp(`\\{\\{${variable}\\}\\}`, 'g'), value);
+              });
+            }
+            
+            // Extract header and footer from template
+            const header = template.header?.content;
+            const footer = template.footer;
+            
+            console.log('🔍 Template Debug:', {
+              templateId: template._id,
+              templateName: template.name,
+              header: template.header,
+              headerContent: header,
+              footer: footer,
+              hasHeader: !!header,
+              hasFooter: !!footer
+            });
+            
+            // Add rendered text, header, and footer to content for saving
+            content.text = renderedText;
+            content.header = header;
+            content.footer = footer;
+            
+            console.log('💾 Content Debug:', {
+              text: content.text?.substring(0, 50) + '...',
+              header: content.header,
+              footer: content.footer,
+              hasHeader: !!content.header,
+              hasFooter: !!content.footer
+            });
+            
             gupshupResponse = await GupshupService.sendTemplateMessage(
               contact.phoneNumber,
-              content.templateId,
-              content.templateData || {}
+              renderedText,
+              header,
+              footer
             );
             messageId = gupshupResponse.messageId;
             break;
@@ -670,6 +738,75 @@ export class ConversationController {
       res.status(500).json({
         success: false,
         message: 'Internal server error while marking conversation as read'
+      });
+    }
+  }
+
+  // GET /api/conversations/:id/24-hour-status - Check if conversation is within 24-hour messaging window
+  static async check24HourStatus(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params;
+
+      console.log('🔍 24-hour status check for conversation:', id);
+
+      if (!id) {
+        return res.status(400).json({
+          success: false,
+          message: 'Conversation ID is required'
+        });
+      }
+
+      // Check if conversation exists
+      const conversation = await ConversationService.getConversationById(id);
+      if (!conversation) {
+        console.log('❌ Conversation not found:', id);
+        return res.status(404).json({
+          success: false,
+          message: 'Conversation not found'
+        });
+      }
+
+      console.log('📊 Conversation data:', {
+        id: conversation._id,
+        lastInboundMessageAt: conversation.lastInboundMessageAt
+      });
+
+      const canSendRegularMessages = await ConversationService.isWithin24HourWindow(id);
+      const canSendTemplates = true; // Templates can always be sent
+
+      console.log('⏰ 24-hour window result:', {
+        canSendRegularMessages,
+        canSendTemplates
+      });
+
+      let hoursRemaining = 0;
+      if (conversation.lastInboundMessageAt && canSendRegularMessages) {
+        const now = new Date();
+        const timeDifference = now.getTime() - conversation.lastInboundMessageAt.getTime();
+        const hoursElapsed = timeDifference / (1000 * 60 * 60);
+        hoursRemaining = Math.max(0, 24 - hoursElapsed);
+      }
+
+      const responseData = {
+        canSendRegularMessages,
+        canSendTemplates,
+        lastInboundMessageAt: conversation.lastInboundMessageAt,
+        hoursRemaining: Math.round(hoursRemaining * 100) / 100 // Round to 2 decimal places
+      };
+
+      console.log('📤 Sending response:', responseData);
+
+      res.status(200).json({
+        success: true,
+        message: '24-hour status retrieved successfully',
+        data: responseData
+      });
+
+    } catch (error: any) {
+      console.error('Check 24-hour status error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error while checking 24-hour status'
       });
     }
   }

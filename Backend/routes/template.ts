@@ -42,6 +42,9 @@ router.post('/create-custom', authenticateToken, TemplateController.createCustom
 // GET /api/templates/categories/local - List template categories from local database
 router.get('/categories/local', TemplateController.getLocalTemplateCategories);
 
+// GET /api/templates/test-encoding - Test URL encoding
+router.get('/test-encoding', TemplateController.testUrlEncoding);
+
 // GET /api/templates - List local templates from database
 router.get('/', TemplateController.getLocalTemplates);
 

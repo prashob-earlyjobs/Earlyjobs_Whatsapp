@@ -175,10 +175,14 @@ export class TemplateController {
         data: {
           templatesCount: testResult.templatesCount,
           credentials: {
-            userIdConfigured: !!GupshupService['userid'],
-            passwordConfigured: !!GupshupService['password'],
-            userIdValue: GupshupService['userid'],
-            passwordLength: GupshupService['password']?.length || 0
+            replyUserIdConfigured: !!process.env.GUPSHUP_REPLY_USER_ID,
+            replyPasswordConfigured: !!process.env.GUPSHUP_REPLY_PASSWORD,
+            templateUserIdConfigured: !!process.env.GUPSHUP_TEMPLATE_USER_ID,
+            templatePasswordConfigured: !!process.env.GUPSHUP_TEMPLATE_PASSWORD,
+            replyUserIdValue: process.env.GUPSHUP_REPLY_USER_ID,
+            templateUserIdValue: process.env.GUPSHUP_TEMPLATE_USER_ID,
+            replyPasswordLength: process.env.GUPSHUP_REPLY_PASSWORD?.length || 0,
+            templatePasswordLength: process.env.GUPSHUP_TEMPLATE_PASSWORD?.length || 0
           }
         }
       });
@@ -347,7 +351,7 @@ export class TemplateController {
   // POST /api/templates/create-custom
   static async createCustomTemplate(req: AuthRequest, res: Response) {
     try {
-      const { name, category, language, body, header, footer, buttons } = req.body;
+      const { name, category, language, department, body, header, footer, buttons } = req.body;
 
       // Validation
       if (!name || !category || !language || !body) {
@@ -376,6 +380,7 @@ export class TemplateController {
         name,
         category: category.toLowerCase(),
         language,
+        department,
         templateId,
         body: {
           text: body,
@@ -597,6 +602,30 @@ export class TemplateController {
       return res.status(500).json({
         success: false,
         message: 'Failed to fetch local template categories',
+        error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      });
+    }
+  }
+
+  // GET /api/templates/test-encoding - Test URL encoding
+  static async testUrlEncoding(req: Request, res: Response) {
+    try {
+      console.log('🧪 Testing URL encoding...');
+      
+      // Test the URL encoding function
+      GupshupService.testUrlEncoding();
+      
+      return res.status(200).json({
+        success: true,
+        message: 'URL encoding test completed. Check server logs for details.'
+      });
+
+    } catch (error: any) {
+      console.error('❌ Error testing URL encoding:', error);
+      
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to test URL encoding',
         error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
       });
     }

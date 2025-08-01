@@ -7,6 +7,8 @@ FrontEnd/node_modules/
 # Production builds
 /dist
 /build
+Backend/dist/
+FrontEnd/dist/
 *.tgz
 *.tar.gz
 
@@ -63,6 +65,16 @@ Thumbs.db
 
 # TypeScript
 *.tsbuildinfo
+
+# Compiled JavaScript files (should only be in dist/)
+Backend/src/*.js
+Backend/controllers/*.js
+Backend/middleware/*.js
+Backend/models/*.js
+Backend/routes/*.js
+Backend/services/*.js
+Backend/utils/*.js
+Backend/config/*.js
 
 # Optional npm cache directory
 .npm

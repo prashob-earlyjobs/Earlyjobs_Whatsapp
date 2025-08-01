@@ -29,9 +29,15 @@ export class MessageService {
     // Update conversation last message time
     await ConversationService.updateLastMessage(messageData.conversationId);
 
-    // If it's an inbound message, increment unread count
+    // If it's an inbound message, increment unread count and update lastInboundMessageAt
     if (messageData.direction === 'inbound') {
+      console.log('📥 Processing inbound message for conversation:', messageData.conversationId);
+      console.log('📅 Updating lastInboundMessageAt to:', messageData.timestamp);
+      
       await ConversationService.incrementUnreadCount(messageData.conversationId);
+      const updateResult = await ConversationService.updateLastInboundMessage(messageData.conversationId, messageData.timestamp);
+      
+      console.log('✅ lastInboundMessageAt update result:', updateResult ? 'Success' : 'Failed');
     }
 
     return savedMessage;

@@ -28,6 +28,9 @@ router.get('/:id/messages', authenticateToken, ConversationController.getConvers
 // POST /api/conversations/:id/messages
 router.post('/:id/messages', authenticateToken, ConversationController.sendMessage);
 
+// GET /api/conversations/:id/24-hour-status
+router.get('/:id/24-hour-status', authenticateToken, ConversationController.check24HourStatus);
+
 // PUT /api/conversations/:id/read
 router.put('/:id/read', authenticateToken, ConversationController.markAsRead);
 

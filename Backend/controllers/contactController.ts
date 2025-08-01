@@ -1,8 +1,130 @@
 import { Request, Response } from 'express';
-import { ContactService, CreateContactData } from '../services/contactService';
+import { ContactService, CreateContactData, ContactFilters } from '../services/contactService';
 import { AuthRequest } from '../middleware/auth';
 
 export class ContactController {
+  // GET /api/contacts - Get all contacts with optional filters
+  static async getAllContacts(req: AuthRequest, res: Response) {
+    try {
+      const { search, tags, assignedTo, isBlocked } = req.query;
+      
+      const filters: ContactFilters = {};
+      
+      if (search && typeof search === 'string') {
+        filters.search = search.trim();
+      }
+      
+      if (tags) {
+        filters.tags = Array.isArray(tags) ? tags as string[] : [tags as string];
+      }
+      
+      if (assignedTo && typeof assignedTo === 'string') {
+        filters.assignedTo = assignedTo.trim();
+      }
+      
+      if (isBlocked !== undefined) {
+        filters.isBlocked = isBlocked === 'true';
+      }
+
+      const contacts = await ContactService.getAllContacts(filters);
+
+      res.json({
+        success: true,
+        message: 'Contacts retrieved successfully',
+        data: {
+          contacts,
+          count: contacts.length
+        }
+      });
+
+    } catch (error: any) {
+      console.error('Get contacts error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error while retrieving contacts'
+      });
+    }
+  }
+
+  // GET /api/contacts/search - Search contacts with query
+  static async searchContacts(req: AuthRequest, res: Response) {
+    try {
+      const { q, limit = '10' } = req.query;
+      
+      if (!q || typeof q !== 'string') {
+        return res.status(400).json({
+          success: false,
+          message: 'Search query is required'
+        });
+      }
+
+      const filters: ContactFilters = {
+        search: q.trim()
+      };
+
+      const contacts = await ContactService.getAllContacts(filters);
+      
+      // Limit results for quick search
+      const limitNum = parseInt(limit as string, 10);
+      const limitedContacts = contacts.slice(0, limitNum);
+
+      res.json({
+        success: true,
+        message: 'Contact search completed',
+        data: {
+          contacts: limitedContacts,
+          count: limitedContacts.length,
+          totalFound: contacts.length
+        }
+      });
+
+    } catch (error: any) {
+      console.error('Search contacts error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error while searching contacts'
+      });
+    }
+  }
+
+  // GET /api/contacts/:id - Get contact by ID
+  static async getContactById(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params;
+
+      if (!id) {
+        return res.status(400).json({
+          success: false,
+          message: 'Contact ID is required'
+        });
+      }
+
+      const contact = await ContactService.getContactById(id);
+
+      if (!contact) {
+        return res.status(404).json({
+          success: false,
+          message: 'Contact not found'
+        });
+      }
+
+      res.json({
+        success: true,
+        message: 'Contact retrieved successfully',
+        data: {
+          contact
+        }
+      });
+
+    } catch (error: any) {
+      console.error('Get contact error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error while retrieving contact'
+      });
+    }
+  }
+
   // POST /api/contacts
   static async createContact(req: AuthRequest, res: Response) {
     try {

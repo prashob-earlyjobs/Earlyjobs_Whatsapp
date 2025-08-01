@@ -7,6 +7,13 @@ export interface CreateBulkMessageData {
   name: string;
   templateId: string;
   contacts: string[];
+  contactsData: Array<{
+    contactId: string;
+    name: string;
+    phoneNumber: string;
+    email?: string;
+    [key: string]: any; // Allow custom variables
+  }>;
   scheduledAt?: Date;
   createdBy: string;
 }
@@ -26,8 +33,13 @@ export class BulkMessageService {
     }
 
     const bulkMessage = new BulkMessage({
-      ...bulkData,
+      name: bulkData.name,
+      templateId: bulkData.templateId,
+      contacts: bulkData.contacts,
+      contactsData: bulkData.contactsData,
       status: 'pending',
+      scheduledAt: bulkData.scheduledAt,
+      createdBy: bulkData.createdBy,
     });
 
     return await bulkMessage.save();
@@ -62,8 +74,7 @@ export class BulkMessageService {
     progressCallback?: (progress: number) => void
   ): Promise<void> {
     const bulkMessage = await BulkMessage.findById(bulkMessageId)
-      .populate('templateId')
-      .populate('contacts');
+      .populate('templateId');
 
     if (!bulkMessage) {
       throw new Error('Bulk message not found');
@@ -78,29 +89,65 @@ export class BulkMessageService {
     await bulkMessage.save();
 
     const template = bulkMessage.templateId as any;
-    const contacts = bulkMessage.contacts as any[];
+    const contactsData = bulkMessage.contactsData as any[];
     let sentCount = 0;
     let failedCount = 0;
 
-    for (let i = 0; i < contacts.length; i++) {
-      const contact = contacts[i];
+    for (let i = 0; i < contactsData.length; i++) {
+      const contactData = contactsData[i];
       
       try {
+        // Render template text with variables using the original contact data
+        let renderedText = template.body.text;
+        
+        if (template.body.variables) {
+          template.body.variables.forEach((variable: string) => {
+            // Try to get the value from contactData (including custom variables)
+            let value = contactData[variable];
+            
+            // Fallback to common fields
+            if (value === undefined || value === null) {
+              const fallbackMappings: Record<string, string> = {
+                name: contactData.name,
+                phoneNumber: contactData.phoneNumber,
+                phone: contactData.phoneNumber,
+                email: contactData.email || ''
+              };
+              value = fallbackMappings[variable];
+            }
+            
+            // If still no value, use the variable placeholder
+            if (value === undefined || value === null) {
+              value = `{{${variable}}}`;
+            }
+            
+            renderedText = renderedText.replace(new RegExp(`\\{\\{${variable}\\}\\}`, 'g'), String(value));
+          });
+        }
+        
+        // Extract header and footer from template
+        const header = template.header?.content;
+        const footer = template.footer;
+        
         // Send message via Gupshup
         await GupshupService.sendTemplateMessage(
-          contact.phoneNumber,
-          template.templateId,
-          {} // Template variables would go here
+          contactData.phoneNumber,
+          renderedText,
+          header,
+          footer
         );
+        
+        // Note: For bulk messages, we don't save individual messages to the database
+        // The header and footer are only sent to Gupshup, not stored locally
         
         sentCount++;
       } catch (error) {
-        console.error(`Failed to send message to ${contact.phoneNumber}:`, error);
+        console.error(`Failed to send message to ${contactData.phoneNumber}:`, error);
         failedCount++;
       }
 
       // Update progress
-      const progress = Math.floor(((i + 1) / contacts.length) * 100);
+      const progress = Math.floor(((i + 1) / contactsData.length) * 100);
       if (progressCallback) {
         progressCallback(progress);
       }
