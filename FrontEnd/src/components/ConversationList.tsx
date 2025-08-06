@@ -30,18 +30,16 @@ export const ConversationList = ({
     markAsRead
   } = useConversations();
 
-  // Refresh conversations when refreshTrigger changes
-  useEffect(() => {
-    if (refreshTrigger && refreshTrigger > 0) {
-      console.log('🔄 Refresh trigger activated:', refreshTrigger);
-      refreshConversations();
-    }
-  }, [refreshTrigger, refreshConversations]);
+      // Refresh conversations when refreshTrigger changes
+    useEffect(() => {
+      if (refreshTrigger && refreshTrigger > 0) {
+        refreshConversations();
+      }
+    }, [refreshTrigger, refreshConversations]);
 
   // Auto-retry on mount if there's an error
   useEffect(() => {
     if (error && !loading) {
-      console.log('🔄 Auto-retrying failed conversation load...');
       const retryTimer = setTimeout(() => {
         refreshConversations();
       }, 2000);

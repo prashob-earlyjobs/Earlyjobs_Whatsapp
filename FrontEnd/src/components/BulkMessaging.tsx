@@ -23,7 +23,11 @@ interface ProcessedContact {
   [key: string]: any; // Allow dynamic properties for template variables
 }
 
-export const BulkMessaging = () => {
+interface BulkMessagingProps {
+  onBulkMessageComplete?: () => void;
+}
+
+export const BulkMessaging = ({ onBulkMessageComplete }: BulkMessagingProps) => {
   const [step, setStep] = useState(1);
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<LocalTemplate | null>(null);
@@ -75,6 +79,10 @@ export const BulkMessaging = () => {
         setBulkMessageId(response.data.bulkMessage._id);
         setStep(4);
         toast.success('Bulk message started successfully!');
+        // Trigger refresh of conversation list to show new conversations
+        if (onBulkMessageComplete) {
+          onBulkMessageComplete();
+        }
         // Start polling for progress
         pollProgress(response.data.bulkMessage._id);
       }
@@ -96,6 +104,10 @@ export const BulkMessaging = () => {
             clearInterval(pollInterval);
             if (response.data.status === 'completed') {
               toast.success('All messages sent successfully!');
+              // Trigger refresh of conversation list to show new messages
+              if (onBulkMessageComplete) {
+                onBulkMessageComplete();
+              }
             } else {
               toast.error('Some messages failed to send');
             }

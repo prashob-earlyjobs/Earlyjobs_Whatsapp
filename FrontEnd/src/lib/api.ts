@@ -335,6 +335,16 @@ export const conversationApi = {
     );
   },
 
+  // Get new messages since timestamp
+  getNewMessages: async (
+    id: string,
+    since: string
+  ): Promise<ApiResponse<{ messages: Message[]; count: number; conversationId: string; since: string }>> => {
+    return apiRequest<{ messages: Message[]; count: number; conversationId: string; since: string }>(
+      `/conversations/${id}/messages/new?since=${encodeURIComponent(since)}`
+    );
+  },
+
   // Update conversation status
   updateConversationStatus: async (
     id: string, 

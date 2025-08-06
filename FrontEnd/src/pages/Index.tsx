@@ -31,7 +31,6 @@ const Index = () => {
   // Clear selected conversation when user logs out or on initial load
   useEffect(() => {
     if (!isAuthenticated && !isLoading) {
-      console.log('🔄 User not authenticated, clearing selected conversation');
       setSelectedConversation(null);
     }
   }, [isAuthenticated, isLoading]);
@@ -39,7 +38,6 @@ const Index = () => {
   // Trigger refresh when auth state changes (helps with page refresh)
   useEffect(() => {
     if (isAuthenticated && !isLoading) {
-      console.log('🔄 User authenticated, triggering conversation refresh');
       setRefreshTrigger(prev => prev + 1);
     }
   }, [isAuthenticated, isLoading]);
@@ -70,7 +68,6 @@ const Index = () => {
   };
 
   const handleSelectConversation = (conversation: Conversation) => {
-    console.log('🔄 Conversation selected:', conversation._id);
     setSelectedConversation(conversation);
   };
 
@@ -86,7 +83,7 @@ const Index = () => {
           />
         );
       case "bulk":
-        return <BulkMessaging />;
+        return <BulkMessaging onBulkMessageComplete={() => setRefreshTrigger(prev => prev + 1)} />;
       case "templates":
         return <TemplateManager />;
       case "analytics":
