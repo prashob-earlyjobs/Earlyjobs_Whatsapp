@@ -464,6 +464,68 @@ export class ConversationController {
     }
   }
 
+  // GET /api/conversations/:id/messages/new - Get new messages since timestamp
+  static async getNewMessages(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const { since } = req.query;
+
+      if (!id) {
+        return res.status(400).json({
+          success: false,
+          message: 'Conversation ID is required'
+        });
+      }
+
+      if (!since) {
+        return res.status(400).json({
+          success: false,
+          message: 'Since timestamp is required'
+        });
+      }
+
+      // Check if conversation exists
+      const conversation = await ConversationService.getConversationById(id);
+      if (!conversation) {
+        return res.status(404).json({
+          success: false,
+          message: 'Conversation not found'
+        });
+      }
+
+      const sinceDate = new Date(since as string);
+      if (isNaN(sinceDate.getTime())) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid timestamp format'
+        });
+      }
+
+      const newMessages = await MessageService.getMessagesSinceTimestamp(
+        id,
+        sinceDate
+      );
+
+      res.json({
+        success: true,
+        message: 'New messages retrieved successfully',
+        data: {
+          messages: newMessages,
+          count: newMessages.length,
+          conversationId: id,
+          since: sinceDate.toISOString()
+        }
+      });
+
+    } catch (error: any) {
+      console.error('Get new messages error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error while retrieving new messages'
+      });
+    }
+  }
+
   // POST /api/conversations/:id/messages - Send message to real WhatsApp via Gupshup
   static async sendMessage(req: AuthRequest, res: Response) {
     try {
@@ -579,28 +641,14 @@ export class ConversationController {
             const header = template.header?.content;
             const footer = template.footer;
             
-            console.log('🔍 Template Debug:', {
-              templateId: template._id,
-              templateName: template.name,
-              header: template.header,
-              headerContent: header,
-              footer: footer,
-              hasHeader: !!header,
-              hasFooter: !!footer
-            });
+
             
             // Add rendered text, header, and footer to content for saving
             content.text = renderedText;
             content.header = header;
             content.footer = footer;
             
-            console.log('💾 Content Debug:', {
-              text: content.text?.substring(0, 50) + '...',
-              header: content.header,
-              footer: content.footer,
-              hasHeader: !!content.header,
-              hasFooter: !!content.footer
-            });
+
             
             gupshupResponse = await GupshupService.sendTemplateMessage(
               contact.phoneNumber,
@@ -747,7 +795,7 @@ export class ConversationController {
     try {
       const { id } = req.params;
 
-      console.log('🔍 24-hour status check for conversation:', id);
+
 
       if (!id) {
         return res.status(400).json({
@@ -759,25 +807,19 @@ export class ConversationController {
       // Check if conversation exists
       const conversation = await ConversationService.getConversationById(id);
       if (!conversation) {
-        console.log('❌ Conversation not found:', id);
+
         return res.status(404).json({
           success: false,
           message: 'Conversation not found'
         });
       }
 
-      console.log('📊 Conversation data:', {
-        id: conversation._id,
-        lastInboundMessageAt: conversation.lastInboundMessageAt
-      });
+
 
       const canSendRegularMessages = await ConversationService.isWithin24HourWindow(id);
       const canSendTemplates = true; // Templates can always be sent
 
-      console.log('⏰ 24-hour window result:', {
-        canSendRegularMessages,
-        canSendTemplates
-      });
+
 
       let hoursRemaining = 0;
       if (conversation.lastInboundMessageAt && canSendRegularMessages) {
@@ -794,7 +836,7 @@ export class ConversationController {
         hoursRemaining: Math.round(hoursRemaining * 100) / 100 // Round to 2 decimal places
       };
 
-      console.log('📤 Sending response:', responseData);
+
 
       res.status(200).json({
         success: true,
