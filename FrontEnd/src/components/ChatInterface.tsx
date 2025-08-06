@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Search, Filter, Send, Paperclip, MoreHorizontal, MessageCircle, User, FileText } from 'lucide-react';
+import { Search, Filter, Send, Paperclip, MoreHorizontal, MessageCircle, User, FileText, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -45,6 +45,7 @@ export const ChatInterface = ({
     error: messagesError,
     sendMessage,
     loadMoreMessages,
+    refreshMessages,
     hasMore
   } = useConversationMessages(selectedConversation?._id || null);
 
@@ -87,31 +88,20 @@ export const ChatInterface = ({
   useEffect(() => {
     const check24HourWindow = async () => {
       if (!selectedConversation) {
-        console.log('🔍 No conversation selected, allowing regular messages');
         setCanSendRegularMessages(true);
         setHoursRemaining(null);
         return;
       }
 
-      console.log('🔍 Checking 24-hour window for conversation:', selectedConversation._id);
-
       try {
         const response = await conversationApi.check24HourWindow(selectedConversation._id);
-        console.log('📊 24-hour window API response:', response.data);
-        
         setCanSendRegularMessages(response.data.canSendRegularMessages);
         setHoursRemaining(response.data.hoursRemaining || null);
-        
-        console.log('✅ State updated:', {
-          canSendRegularMessages: response.data.canSendRegularMessages,
-          hoursRemaining: response.data.hoursRemaining
-        });
       } catch (error) {
         console.error('❌ Error checking 24-hour window:', error);
         // Default to allowing regular messages if there's an error
         setCanSendRegularMessages(true);
         setHoursRemaining(null);
-        console.log('⚠️ Defaulting to allow regular messages due to error');
       }
     };
 
@@ -257,6 +247,15 @@ export const ChatInterface = ({
                   <Badge variant="outline">
                     {selectedConversation.status}
                   </Badge>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={refreshMessages}
+                    disabled={messagesLoading}
+                    title="Refresh messages"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${messagesLoading ? 'animate-spin' : ''}`} />
+                  </Button>
                   <Button variant="ghost" size="sm">
                     <MoreHorizontal className="w-4 h-4" />
                   </Button>
@@ -305,28 +304,11 @@ export const ChatInterface = ({
                       {message.type === 'template' && (
                         <div className="space-y-1">
                           {/* Header */}
-                          {(() => {
-                            if (message.content.header) {
-                              console.log('🎨 Header Debug:', {
-                                messageId: message._id,
-                                header: message.content.header,
-                                hasHeader: !!message.content.header,
-                                type: typeof message.content.header
-                              });
-                              return (
-                                <p className="font-semibold text-sm bg-blue-100 text-blue-800 px-2 py-1 rounded-md border border-blue-300 shadow-sm">
-                                  📋 {message.content.header}
-                                </p>
-                              );
-                            } else {
-                              console.log('❌ No Header Found:', {
-                                messageId: message._id,
-                                content: message.content,
-                                type: message.type
-                              });
-                              return null;
-                            }
-                          })()}
+                          {message.content.header && (
+                            <p className="font-semibold text-sm bg-blue-100 text-blue-800 px-2 py-1 rounded-md border border-blue-300 shadow-sm">
+                              📋 {message.content.header}
+                            </p>
+                          )}
                           
                           {/* Body */}
                           {message.content.text ? (

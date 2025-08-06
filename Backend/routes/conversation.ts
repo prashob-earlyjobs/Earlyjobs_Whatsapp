@@ -25,6 +25,9 @@ router.put('/:id/assign', authenticateToken, ConversationController.assignConver
 // GET /api/conversations/:id/messages
 router.get('/:id/messages', authenticateToken, ConversationController.getConversationMessages);
 
+// GET /api/conversations/:id/messages/new - Get new messages since timestamp
+router.get('/:id/messages/new', authenticateToken, ConversationController.getNewMessages);
+
 // POST /api/conversations/:id/messages
 router.post('/:id/messages', authenticateToken, ConversationController.sendMessage);
 

@@ -30,7 +30,7 @@ export class ConversationService {
       throw new Error('Contact not found');
     }
 
-    console.log(`🔍 Looking for existing conversation for contact: ${conversationData.contactId}`);
+
 
     // First, check if there's an active conversation (open or pending)
     let existingConversation = await Conversation.findOne({ 
@@ -40,7 +40,7 @@ export class ConversationService {
       .populate('assignedTo', 'name email');
 
     if (existingConversation) {
-      console.log(`✅ Found existing active conversation: ${existingConversation._id}`);
+
       return { 
         conversation: existingConversation, 
         isNew: false, 
@@ -59,7 +59,6 @@ export class ConversationService {
 
     if (closedConversation) {
       // Reopen the closed conversation
-      console.log(`🔄 Reopening closed conversation: ${closedConversation._id}`);
       const reopenedConversation = await Conversation.findByIdAndUpdate(
         closedConversation._id,
         { 
@@ -79,7 +78,6 @@ export class ConversationService {
     }
 
     // No existing conversation found, create a new one
-    console.log(`➕ Creating new conversation for contact: ${conversationData.contactId}`);
     const conversation = new Conversation(conversationData);
     const savedConversation = await conversation.save();
     

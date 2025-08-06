@@ -2,6 +2,8 @@ import BulkMessage, { IBulkMessage } from '../models/BulkMessage';
 import Template from '../models/Template';
 import Contact from '../models/Contact';
 import { GupshupService } from './gupshupService';
+import { ConversationService } from './conversationService';
+import { MessageService } from './messageService';
 
 export interface CreateBulkMessageData {
   name: string;
@@ -130,15 +132,36 @@ export class BulkMessageService {
         const footer = template.footer;
         
         // Send message via Gupshup
-        await GupshupService.sendTemplateMessage(
+        const gupshupResponse = await GupshupService.sendTemplateMessage(
           contactData.phoneNumber,
           renderedText,
           header,
           footer
         );
         
-        // Note: For bulk messages, we don't save individual messages to the database
-        // The header and footer are only sent to Gupshup, not stored locally
+        // Create or find conversation for this contact
+        const { conversation } = await ConversationService.findOrCreateConversation({
+          contactId: (contactData.contactId as any).toString(),
+          assignedTo: (bulkMessage.createdBy as any).toString()
+        });
+        
+        // Create individual message record in database
+        const messageContent = {
+          text: renderedText,
+          header: header || undefined,
+          footer: footer || undefined
+        };
+        
+        await MessageService.createMessage({
+          conversationId: (conversation._id as any).toString(),
+          contactId: (contactData.contactId as any).toString(),
+          senderId: (bulkMessage.createdBy as any).toString(),
+          messageId: gupshupResponse.messageId,
+          type: 'template',
+          content: messageContent,
+          direction: 'outbound',
+          timestamp: new Date()
+        });
         
         sentCount++;
       } catch (error) {

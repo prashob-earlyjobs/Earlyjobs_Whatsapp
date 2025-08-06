@@ -31,13 +31,8 @@ export class MessageService {
 
     // If it's an inbound message, increment unread count and update lastInboundMessageAt
     if (messageData.direction === 'inbound') {
-      console.log('📥 Processing inbound message for conversation:', messageData.conversationId);
-      console.log('📅 Updating lastInboundMessageAt to:', messageData.timestamp);
-      
       await ConversationService.incrementUnreadCount(messageData.conversationId);
-      const updateResult = await ConversationService.updateLastInboundMessage(messageData.conversationId, messageData.timestamp);
-      
-      console.log('✅ lastInboundMessageAt update result:', updateResult ? 'Success' : 'Failed');
+      await ConversationService.updateLastInboundMessage(messageData.conversationId, messageData.timestamp);
     }
 
     return savedMessage;
@@ -60,6 +55,18 @@ export class MessageService {
       .sort({ timestamp: -1 })
       .limit(limit)
       .skip(offset);
+  }
+
+  static async getMessagesSinceTimestamp(
+    conversationId: string,
+    since: Date
+  ): Promise<IMessage[]> {
+    return await Message.find({ 
+      conversationId,
+      timestamp: { $gt: since }
+    })
+      .populate('senderId', 'name email')
+      .sort({ timestamp: -1 });
   }
 
   static async getAllMessages(filters: MessageFilters = {}): Promise<IMessage[]> {
