@@ -9,6 +9,9 @@ router.post('/incoming', WebhookController.handleIncomingMessage);
 // Gupshup message status webhook
 router.post('/status', WebhookController.handleStatusUpdate);
 
+// Gupshup delivery report webhook (GET and POST)
+router.all('/delivery-report', WebhookController.handleDeliveryReport);
+
 // Test webhook endpoint
 router.get('/test', WebhookController.testWebhook);
 

@@ -192,8 +192,16 @@ export class GupshupService {
     phoneNumber: string,
     templateMessage: string,
     header?: string,
-    footer?: string
+    footer?: string,
+    templateConditions?: {
+      isTemplate?: boolean;
+      templateId?: string;
+      category?: string;
+      language?: string;
+    }
   ): Promise<GupshupMessage> {
+    this.validateTemplateCredentials();
+    
     const userId = this.templateUserId;
     const password = this.templatePassword;
 
@@ -206,22 +214,35 @@ export class GupshupService {
       send_to: phoneNumber.replace(/\+/g, ""), // Remove + prefix for Gupshup
       msg_type: "TEXT",
       msg: templateMessage,
-      isTemplate: "true",
+      isTemplate: templateConditions?.isTemplate !== false ? "true" : "false",
     };
 
+    // Add header if provided
     if (header) {
       params["header"] = header;
     }
 
+    // Add footer if provided
     if (footer) {
       params["footer"] = footer;
     }
 
-    try {
-      console.log("templateMessage", templateMessage);
-      console.log("footer", footer);
+    // Add template conditions if provided
+    if (templateConditions?.templateId) {
+      params["templateId"] = templateConditions.templateId;
+    }
 
+    if (templateConditions?.category) {
+      params["category"] = templateConditions.category;
+    }
+
+    if (templateConditions?.language) {
+      params["language"] = templateConditions.language;
+    }
+
+    try {
       console.log("🔗 Sending Gupshup template message to:", phoneNumber);
+      console.log("📡 Template conditions:", templateConditions);
       console.log("📡 Params:", { ...params, password: "***" });
 
       const response = await axios.get(this.baseUrl, { params });
@@ -244,11 +265,15 @@ export class GupshupService {
             "❌ Gupshup Gateway API template error:",
             gupshupResponse
           );
-          throw new Error(
-            `Gupshup template error: ${
-              gupshupResponse.details || "Unknown error"
-            }`
-          );
+          
+          // Handle specific error cases
+          if (gupshupResponse.id === "102") {
+            throw new Error("Authentication failed due to invalid userId or password");
+          } else if (gupshupResponse.details) {
+            throw new Error(`Gupshup template error: ${gupshupResponse.details}`);
+          } else {
+            throw new Error(`Gupshup template error: ${gupshupResponse.status}`);
+          }
         }
       }
 
@@ -263,6 +288,50 @@ export class GupshupService {
       }
       throw new Error(`Failed to send template message: ${error.message}`);
     }
+  }
+
+  /**
+   * Send template message with enhanced validation and conditions
+   */
+  static async sendTemplateMessageWithConditions(
+    phoneNumber: string,
+    templateData: {
+      message: string;
+      header?: string;
+      footer?: string;
+      templateId?: string;
+      category?: string;
+      language?: string;
+      isTemplate?: boolean;
+    }
+  ): Promise<GupshupMessage> {
+    // Validate template message length
+    const totalLength = (templateData.message?.length || 0) + 
+                       (templateData.header?.length || 0) + 
+                       (templateData.footer?.length || 0);
+    
+    if (totalLength > 1024) {
+      throw new Error("Template message exceeds maximum length of 1024 characters");
+    }
+
+    // Validate phone number format
+    const cleanPhone = phoneNumber.replace(/\+/g, "").replace(/\s/g, "");
+    if (!/^\d{10,15}$/.test(cleanPhone)) {
+      throw new Error("Invalid phone number format");
+    }
+
+    return this.sendTemplateMessage(
+      phoneNumber,
+      templateData.message,
+      templateData.header,
+      templateData.footer,
+      {
+        isTemplate: templateData.isTemplate,
+        templateId: templateData.templateId,
+        category: templateData.category,
+        language: templateData.language
+      }
+    );
   }
 
   // Legacy method for backward compatibility - now uses template format
@@ -573,6 +642,111 @@ export class GupshupService {
     const expectedSignature = process.env.GUPSHUP_WEBHOOK_SECRET || "";
     // Add your signature validation logic here
     return signature === expectedSignature;
+  }
+
+  /**
+   * Validate template message before sending
+   */
+  static validateTemplateMessage(templateData: {
+    message: string;
+    header?: string;
+    footer?: string;
+    templateId?: string;
+    category?: string;
+    language?: string;
+  }): { isValid: boolean; errors: string[] } {
+    const errors: string[] = [];
+
+    // Check message length
+    const totalLength = (templateData.message?.length || 0) + 
+                       (templateData.header?.length || 0) + 
+                       (templateData.footer?.length || 0);
+    
+    if (totalLength > 1024) {
+      errors.push("Template message exceeds maximum length of 1024 characters");
+    }
+
+    if (!templateData.message || templateData.message.trim().length === 0) {
+      errors.push("Template message body is required");
+    }
+
+    // Check for required template conditions
+    if (!templateData.templateId) {
+      errors.push("Template ID is required for template messages");
+    }
+
+    if (!templateData.category) {
+      errors.push("Template category is required");
+    }
+
+    if (!templateData.language) {
+      errors.push("Template language is required");
+    }
+
+    // Validate header length if present
+    if (templateData.header && templateData.header.length > 60) {
+      errors.push("Template header cannot exceed 60 characters");
+    }
+
+    // Validate footer length if present
+    if (templateData.footer && templateData.footer.length > 60) {
+      errors.push("Template footer cannot exceed 60 characters");
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors
+    };
+  }
+
+  /**
+   * Create template URL with conditions (for debugging/testing)
+   */
+  static createTemplateUrl(phoneNumber: string, templateData: {
+    message: string;
+    header?: string;
+    footer?: string;
+    templateId?: string;
+    category?: string;
+    language?: string;
+    isTemplate?: boolean;
+  }): string {
+    const userId = this.templateUserId;
+    const password = this.templatePassword;
+
+    const params = new URLSearchParams({
+      userid: userId!,
+      password: password!,
+      v: "1.1",
+      format: "json",
+      method: "SENDMESSAGE",
+      send_to: phoneNumber.replace(/\+/g, ""),
+      msg_type: "TEXT",
+      msg: templateData.message,
+      isTemplate: templateData.isTemplate !== false ? "true" : "false",
+    });
+
+    if (templateData.header) {
+      params.append("header", templateData.header);
+    }
+
+    if (templateData.footer) {
+      params.append("footer", templateData.footer);
+    }
+
+    if (templateData.templateId) {
+      params.append("templateId", templateData.templateId);
+    }
+
+    if (templateData.category) {
+      params.append("category", templateData.category);
+    }
+
+    if (templateData.language) {
+      params.append("language", templateData.language);
+    }
+
+    return `${this.baseUrl}?${params.toString()}`;
   }
 
   // Utility method to test API credentials

@@ -37,4 +37,7 @@ router.get('/:id/24-hour-status', authenticateToken, ConversationController.chec
 // PUT /api/conversations/:id/read
 router.put('/:id/read', authenticateToken, ConversationController.markAsRead);
 
+// POST /api/conversations/test-template
+router.post('/test-template', authenticateToken, ConversationController.testTemplateConditions);
+
 export default router; 
