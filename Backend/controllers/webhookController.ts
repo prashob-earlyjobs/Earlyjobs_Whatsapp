@@ -342,4 +342,237 @@ export class WebhookController {
       });
     }
   }
+
+  // GET/POST /api/webhooks/gupshup/delivery-report - Handle real-time delivery reports
+  static async handleDeliveryReport(req: Request, res: Response) {
+    try {
+      console.log('📊 Delivery Report Webhook Received:');
+      console.log('Method:', req.method);
+      console.log('Headers:', JSON.stringify(req.headers, null, 2));
+      console.log('Query:', JSON.stringify(req.query, null, 2));
+      console.log('Body:', JSON.stringify(req.body, null, 2));
+
+      let deliveryReports: any[] = [];
+
+      // Handle GET request (single delivery report)
+      if (req.method === 'GET') {
+        const {
+          externalId,
+          deliveredTS,
+          status,
+          cause,
+          phoneNo,
+          errCode,
+          noOfFrags,
+          mask
+        } = req.query;
+
+        if (externalId) {
+          deliveryReports.push({
+            externalId,
+            deliveredTS: deliveredTS ? parseInt(deliveredTS as string) : null,
+            status,
+            cause,
+            phoneNo,
+            errCode,
+            noOfFrags: noOfFrags ? parseInt(noOfFrags as string) : null,
+            mask
+          });
+        }
+      }
+      // Handle POST request (batch delivery reports)
+      else if (req.method === 'POST') {
+        if (Array.isArray(req.body)) {
+          deliveryReports = req.body;
+        } else if (req.body && req.body.response && Array.isArray(req.body.response)) {
+          deliveryReports = req.body.response;
+        } else if (req.body && typeof req.body === 'object') {
+          deliveryReports = [req.body];
+        }
+      }
+
+      if (deliveryReports.length === 0) {
+        console.warn('⚠️ No delivery reports found in request');
+        return res.status(200).json({
+          success: true,
+          message: 'No delivery reports to process'
+        });
+      }
+
+      console.log(`📋 Processing ${deliveryReports.length} delivery report(s)`);
+
+      // Process each delivery report
+      const results = await Promise.allSettled(
+        deliveryReports.map(async (report) => {
+          return await this.processDeliveryReport(report);
+        })
+      );
+
+      // Count successful and failed processing
+      const successful = results.filter(result => result.status === 'fulfilled').length;
+      const failed = results.filter(result => result.status === 'rejected').length;
+
+      console.log(`✅ Processed ${successful} delivery reports successfully, ${failed} failed`);
+
+      // Log any failed processing
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          console.error(`❌ Failed to process delivery report ${index}:`, result.reason);
+        }
+      });
+
+      res.status(200).json({
+        success: true,
+        message: `Processed ${successful} delivery reports successfully`,
+        processed: successful,
+        failed: failed,
+        total: deliveryReports.length
+      });
+
+    } catch (error: any) {
+      console.error('❌ Delivery report webhook error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error processing delivery reports',
+        error: error.message
+      });
+    }
+  }
+
+  // Process individual delivery report
+  private static async processDeliveryReport(report: any) {
+    try {
+      const {
+        externalId,
+        eventType,
+        eventTs,
+        destAddr,
+        srcAddr,
+        cause,
+        errCode,
+        channel,
+        noOfFrags,
+        status,
+        deliveredTS,
+        phoneNo
+      } = report;
+
+      console.log(`📊 Processing delivery report for externalId: ${externalId}`);
+
+      // Map Gupshup status to our internal status
+      const mappedStatus = this.mapGupshupStatusToInternalStatus(
+        eventType || status,
+        cause,
+        errCode
+      );
+
+      // Find message by externalId (messageId)
+      const message = await MessageService.getMessageByMessageId(externalId);
+      
+      if (!message) {
+        console.warn(`⚠️ Message not found for externalId: ${externalId}`);
+        return {
+          externalId,
+          status: 'not_found',
+          message: 'Message not found in database'
+        };
+      }
+
+      // Update message status
+      await MessageService.updateMessageStatus((message._id as string), mappedStatus);
+
+      // Log delivery details
+      const deliveryDetails = {
+        externalId,
+        originalStatus: eventType || status,
+        mappedStatus,
+        cause,
+        errCode,
+        phoneNumber: destAddr || phoneNo,
+        timestamp: eventTs || deliveredTS,
+        channel,
+        noOfFrags
+      };
+
+      console.log(`✅ Updated message ${externalId} status to: ${mappedStatus}`, deliveryDetails);
+
+      return {
+        externalId,
+        status: 'updated',
+        mappedStatus,
+        deliveryDetails
+      };
+
+    } catch (error: any) {
+      console.error(`❌ Error processing delivery report:`, error);
+      throw error;
+    }
+  }
+
+  // Map Gupshup status to internal status
+  private static mapGupshupStatusToInternalStatus(
+    eventType: string,
+    cause?: string,
+    errCode?: string
+  ): 'sent' | 'delivered' | 'read' | 'failed' {
+    const status = eventType?.toUpperCase();
+    const causeUpper = cause?.toUpperCase();
+
+    // Success cases
+    if (status === 'DELIVERED' || status === 'SUCCESS') {
+      return 'delivered';
+    }
+
+    // Read status (if supported by Gupshup)
+    if (status === 'READ') {
+      return 'read';
+    }
+
+    // Failure cases based on Gupshup documentation
+    if (status === 'FAILED' || status === 'FAILURE' || status === 'UNDELIV') {
+      return 'failed';
+    }
+
+    // Check specific error codes
+    if (errCode) {
+      const errorCode = parseInt(errCode);
+      
+      // Success codes
+      if (errorCode === 0) {
+        return 'delivered';
+      }
+      
+      // Failure codes
+      if ([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 22, 23, 24, 38].includes(errorCode)) {
+        return 'failed';
+      }
+    }
+
+    // Check specific causes
+    if (causeUpper) {
+      const failureCauses = [
+        'ABSENT_SUBSCRIBER',
+        'UNKNOWN_SUBSCRIBER',
+        'BLOCKED_MASK',
+        'SYSTEM_FAILURE',
+        'CALL_BARRED',
+        'SERVICE_DOWN',
+        'DND_FAIL',
+        'DND_TIMEOUT',
+        'MSG_DOES_NOT_MATCH_TEMPLATE',
+        'OUTSIDE_WORKING_HOURS',
+        'BLOCKED',
+        'BLOCKED_FOR_USER',
+        'OTHER'
+      ];
+
+      if (failureCauses.includes(causeUpper)) {
+        return 'failed';
+      }
+    }
+
+    // Default to sent if we can't determine the status
+    console.warn(`⚠️ Unknown status mapping for: ${eventType}, cause: ${cause}, errCode: ${errCode}`);
+    return 'sent';
+  }
 } 

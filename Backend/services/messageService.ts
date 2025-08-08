@@ -45,6 +45,13 @@ export class MessageService {
       .populate('senderId', 'name email');
   }
 
+  static async getMessageByMessageId(messageId: string): Promise<IMessage | null> {
+    return await Message.findOne({ messageId })
+      .populate('conversationId')
+      .populate('contactId', 'name phoneNumber')
+      .populate('senderId', 'name email');
+  }
+
   static async getMessagesByConversation(
     conversationId: string,
     limit: number = 50,

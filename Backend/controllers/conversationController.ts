@@ -648,13 +648,31 @@ export class ConversationController {
             content.header = header;
             content.footer = footer;
             
-
+            // Prepare template data for validation and sending
+            const templateData = {
+              message: renderedText,
+              header: header,
+              footer: footer,
+              templateId: template.templateId,
+              category: template.category,
+              language: template.language,
+              isTemplate: true
+            };
             
-            gupshupResponse = await GupshupService.sendTemplateMessage(
+            // Validate template before sending
+            const validation = GupshupService.validateTemplateMessage(templateData);
+            if (!validation.isValid) {
+              return res.status(400).json({
+                success: false,
+                message: 'Template validation failed',
+                errors: validation.errors
+              });
+            }
+            
+            // Use enhanced template message sending with conditions
+            gupshupResponse = await GupshupService.sendTemplateMessageWithConditions(
               contact.phoneNumber,
-              renderedText,
-              header,
-              footer
+              templateData
             );
             messageId = gupshupResponse.messageId;
             break;
@@ -849,6 +867,66 @@ export class ConversationController {
       res.status(500).json({
         success: false,
         message: 'Internal server error while checking 24-hour status'
+      });
+    }
+  }
+
+  // POST /api/conversations/test-template
+  static async testTemplateConditions(req: AuthRequest, res: Response) {
+    try {
+      const { phoneNumber, templateData } = req.body;
+
+      if (!phoneNumber) {
+        return res.status(400).json({
+          success: false,
+          message: 'Phone number is required'
+        });
+      }
+
+      if (!templateData) {
+        return res.status(400).json({
+          success: false,
+          message: 'Template data is required'
+        });
+      }
+
+      // Validate template data
+      const validation = GupshupService.validateTemplateMessage(templateData);
+      if (!validation.isValid) {
+        return res.status(400).json({
+          success: false,
+          message: 'Template validation failed',
+          errors: validation.errors
+        });
+      }
+
+      // Create template URL for testing
+      const templateUrl = GupshupService.createTemplateUrl(phoneNumber, templateData);
+
+      // Test sending template message
+      const gupshupResponse = await GupshupService.sendTemplateMessageWithConditions(
+        phoneNumber,
+        templateData
+      );
+
+      res.json({
+        success: true,
+        message: 'Template test completed successfully',
+        data: {
+          templateUrl: templateUrl.replace(/password=[^&]*/, 'password=***'), // Hide password in response
+          gupshupResponse,
+          validation: {
+            isValid: validation.isValid,
+            errors: validation.errors
+          }
+        }
+      });
+    } catch (error: any) {
+      console.error('Test template conditions error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to test template conditions',
+        error: error.message
       });
     }
   }
