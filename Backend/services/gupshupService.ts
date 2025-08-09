@@ -45,19 +45,19 @@ export class GupshupService {
 
   // Dynamic getters for environment variables
   private static get replyUserId(): string {
-    return process.env.GUPSHUP_REPLY_USER_ID || "";
+    return process.env.GUPSHUP_REPLY_USER_ID || process.env.GUPSHUP_USER_ID || "";
   }
 
   private static get replyPassword(): string {
-    return process.env.GUPSHUP_REPLY_PASSWORD || "";
+    return process.env.GUPSHUP_REPLY_PASSWORD || process.env.GUPSHUP_PASSWORD || "";
   }
 
   private static get templateUserId(): string {
-    return process.env.GUPSHUP_TEMPLATE_USER_ID || "";
+    return process.env.GUPSHUP_TEMPLATE_USER_ID || process.env.GUPSHUP_USER_ID || "";
   }
 
   private static get templatePassword(): string {
-    return process.env.GUPSHUP_TEMPLATE_PASSWORD || "";
+    return process.env.GUPSHUP_TEMPLATE_PASSWORD || process.env.GUPSHUP_PASSWORD || "";
   }
 
   /**
