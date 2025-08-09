@@ -414,6 +414,7 @@ export class WebhookController {
         console.log('  req.body is array:', Array.isArray(req.body));
         console.log('  req.body.response exists:', !!(req.body && req.body.response));
         console.log('  req.body.response is array:', !!(req.body && req.body.response && Array.isArray(req.body.response)));
+        console.log('  req.body.response type:', typeof (req.body && req.body.response));
         
         if (Array.isArray(req.body)) {
           deliveryReports = req.body;
@@ -423,6 +424,26 @@ export class WebhookController {
           deliveryReports = req.body.response;
           console.log('✅ Using req.body.response array');
           console.log('📊 Response array contents:', JSON.stringify(req.body.response, null, 2));
+        } else if (req.body && req.body.response && typeof req.body.response === 'string') {
+          // Handle URL-encoded form data where response is a JSON string
+          console.log('🔧 Detected JSON string in response field');
+          console.log('📝 Raw response string:', req.body.response);
+          try {
+            const parsedResponse = JSON.parse(req.body.response);
+            console.log('✅ Successfully parsed JSON string');
+            console.log('📊 Parsed data:', JSON.stringify(parsedResponse, null, 2));
+            
+            if (Array.isArray(parsedResponse)) {
+              deliveryReports = parsedResponse;
+              console.log('✅ Using parsed JSON array');
+            } else {
+              deliveryReports = [parsedResponse];
+              console.log('✅ Converting parsed JSON object to array');
+            }
+          } catch (parseError) {
+            console.error('❌ Failed to parse JSON string:', parseError);
+            console.log('📝 Invalid JSON string:', req.body.response);
+          }
         } else if (req.body && typeof req.body === 'object') {
           deliveryReports = [req.body];
           console.log('✅ Converting single object to array');
