@@ -346,16 +346,28 @@ export class WebhookController {
   // GET/POST /api/webhooks/gupshup/delivery-report - Handle real-time delivery reports
   static async handleDeliveryReport(req: Request, res: Response) {
     try {
-      console.log('📊 Delivery Report Webhook Received:');
-      console.log('Method:', req.method);
-      console.log('Headers:', JSON.stringify(req.headers, null, 2));
-      console.log('Query:', JSON.stringify(req.query, null, 2));
-      console.log('Body:', JSON.stringify(req.body, null, 2));
+      console.log('🚀 ===== GUPSHUP DELIVERY REPORT WEBHOOK RECEIVED =====');
+      console.log('📅 Timestamp:', new Date().toISOString());
+      console.log('🔗 Method:', req.method);
+      console.log('🌐 URL:', req.url);
+      console.log('📋 Content-Type:', req.get('Content-Type'));
+      console.log('📡 User-Agent:', req.get('User-Agent'));
+      console.log('🔑 Headers:');
+      console.log(JSON.stringify(req.headers, null, 2));
+      console.log('❓ Query Parameters:');
+      console.log(JSON.stringify(req.query, null, 2));
+      console.log('📦 Request Body:');
+      console.log(JSON.stringify(req.body, null, 2));
+      console.log('📏 Body Size:', JSON.stringify(req.body).length, 'characters');
+      console.log('🏷️ Body Type:', typeof req.body);
+      console.log('📊 Body Array Check:', Array.isArray(req.body));
+      console.log('===============================================');
 
       let deliveryReports: any[] = [];
 
       // Handle GET request (single delivery report)
       if (req.method === 'GET') {
+        console.log('🔍 Processing GET request...');
         const {
           externalId,
           deliveredTS,
@@ -367,8 +379,18 @@ export class WebhookController {
           mask
         } = req.query;
 
+        console.log('📋 GET Query Parameters Extracted:');
+        console.log('  externalId:', externalId);
+        console.log('  deliveredTS:', deliveredTS);
+        console.log('  status:', status);
+        console.log('  cause:', cause);
+        console.log('  phoneNo:', phoneNo);
+        console.log('  errCode:', errCode);
+        console.log('  noOfFrags:', noOfFrags);
+        console.log('  mask:', mask);
+
         if (externalId) {
-          deliveryReports.push({
+          const report = {
             externalId,
             deliveredTS: deliveredTS ? parseInt(deliveredTS as string) : null,
             status,
@@ -377,22 +399,42 @@ export class WebhookController {
             errCode,
             noOfFrags: noOfFrags ? parseInt(noOfFrags as string) : null,
             mask
-          });
+          };
+          deliveryReports.push(report);
+          console.log('✅ GET delivery report created:', JSON.stringify(report, null, 2));
+        } else {
+          console.log('❌ GET request missing externalId');
         }
       }
       // Handle POST request (batch delivery reports)
       else if (req.method === 'POST') {
+        console.log('🔍 Processing POST request...');
+        console.log('📦 Body structure analysis:');
+        console.log('  req.body exists:', !!req.body);
+        console.log('  req.body is array:', Array.isArray(req.body));
+        console.log('  req.body.response exists:', !!(req.body && req.body.response));
+        console.log('  req.body.response is array:', !!(req.body && req.body.response && Array.isArray(req.body.response)));
+        
         if (Array.isArray(req.body)) {
           deliveryReports = req.body;
+          console.log('✅ Using req.body as array directly');
+          console.log('📊 Array contents:', JSON.stringify(req.body, null, 2));
         } else if (req.body && req.body.response && Array.isArray(req.body.response)) {
           deliveryReports = req.body.response;
+          console.log('✅ Using req.body.response array');
+          console.log('📊 Response array contents:', JSON.stringify(req.body.response, null, 2));
         } else if (req.body && typeof req.body === 'object') {
           deliveryReports = [req.body];
+          console.log('✅ Converting single object to array');
+          console.log('📊 Single object:', JSON.stringify(req.body, null, 2));
+        } else {
+          console.log('❌ POST request has invalid body structure');
         }
       }
 
       if (deliveryReports.length === 0) {
         console.warn('⚠️ No delivery reports found in request');
+        console.log('🔚 Ending processing - no delivery reports to process');
         return res.status(200).json({
           success: true,
           message: 'No delivery reports to process'
@@ -400,11 +442,15 @@ export class WebhookController {
       }
 
       console.log(`📋 Processing ${deliveryReports.length} delivery report(s)`);
+      console.log('📊 All delivery reports to process:');
+      deliveryReports.forEach((report, index) => {
+        console.log(`  Report ${index + 1}:`, JSON.stringify(report, null, 2));
+      });
 
       // Process each delivery report
       const results = await Promise.allSettled(
         deliveryReports.map(async (report) => {
-          return await this.processDeliveryReport(report);
+          return await WebhookController.processDeliveryReport(report);
         })
       );
 
@@ -442,6 +488,9 @@ export class WebhookController {
   // Process individual delivery report
   private static async processDeliveryReport(report: any) {
     try {
+      console.log('🔄 ===== PROCESSING INDIVIDUAL DELIVERY REPORT =====');
+      console.log('📦 Raw report data:', JSON.stringify(report, null, 2));
+      
       const {
         externalId,
         eventType,
@@ -450,36 +499,75 @@ export class WebhookController {
         srcAddr,
         cause,
         errCode,
+        errorCode,
         channel,
         noOfFrags,
         status,
         deliveredTS,
-        phoneNo
+        phoneNo,
+        hsmTemplateId,
+        conversation,
+        pricing
       } = report;
 
+      console.log('📋 Extracted fields from report:');
+      console.log('  externalId:', externalId);
+      console.log('  eventType:', eventType);
+      console.log('  eventTs:', eventTs);
+      console.log('  destAddr:', destAddr);
+      console.log('  srcAddr:', srcAddr);
+      console.log('  cause:', cause);
+      console.log('  errCode:', errCode);
+      console.log('  errorCode:', errorCode);
+      console.log('  channel:', channel);
+      console.log('  noOfFrags:', noOfFrags);
+      console.log('  status:', status);
+      console.log('  deliveredTS:', deliveredTS);
+      console.log('  phoneNo:', phoneNo);
+      console.log('  hsmTemplateId:', hsmTemplateId);
+      console.log('  conversation:', JSON.stringify(conversation, null, 2));
+      console.log('  pricing:', JSON.stringify(pricing, null, 2));
+      
       console.log(`📊 Processing delivery report for externalId: ${externalId}`);
 
       // Map Gupshup status to our internal status
-      const mappedStatus = this.mapGupshupStatusToInternalStatus(
+      console.log('🔄 Status mapping process:');
+      console.log('  Input eventType/status:', eventType || status);
+      console.log('  Input cause:', cause);
+      console.log('  Input errCode/errorCode:', errCode || errorCode);
+      
+      const mappedStatus = WebhookController.mapGupshupStatusToInternalStatus(
         eventType || status,
         cause,
-        errCode
+        errCode || errorCode
       );
+      
+      console.log('  Mapped to internal status:', mappedStatus);
 
       // Find message by externalId (messageId)
+      console.log(`🔍 Searching for message with externalId: ${externalId}`);
       const message = await MessageService.getMessageByMessageId(externalId);
       
       if (!message) {
         console.warn(`⚠️ Message not found for externalId: ${externalId}`);
+        console.log('❌ Database search failed - message does not exist');
         return {
           externalId,
           status: 'not_found',
           message: 'Message not found in database'
         };
       }
+      
+      console.log('✅ Message found in database:');
+      console.log('  Message ID:', message._id);
+      console.log('  Current status:', message.status);
+      console.log('  Message type:', message.type);
+      console.log('  Direction:', message.direction);
 
       // Update message status
+      console.log(`🔄 Updating message status from '${message.status}' to '${mappedStatus}'`);
       await MessageService.updateMessageStatus((message._id as string), mappedStatus);
+      console.log('✅ Message status updated successfully');
 
       // Log delivery details
       const deliveryDetails = {
@@ -487,24 +575,35 @@ export class WebhookController {
         originalStatus: eventType || status,
         mappedStatus,
         cause,
-        errCode,
+        errCode: errCode || errorCode,
         phoneNumber: destAddr || phoneNo,
         timestamp: eventTs || deliveredTS,
         channel,
-        noOfFrags
+        noOfFrags,
+        hsmTemplateId,
+        conversation,
+        pricing
       };
 
       console.log(`✅ Updated message ${externalId} status to: ${mappedStatus}`, deliveryDetails);
 
-      return {
+      const result = {
         externalId,
         status: 'updated',
         mappedStatus,
         deliveryDetails
       };
+      
+      console.log('📤 Processing result:', JSON.stringify(result, null, 2));
+      console.log('🏁 ===== DELIVERY REPORT PROCESSING COMPLETED =====');
+      
+      return result;
 
     } catch (error: any) {
-      console.error(`❌ Error processing delivery report:`, error);
+      console.error(`❌ Error processing delivery report for externalId: ${externalId}`);
+      console.error('Error details:', error);
+      console.error('Error stack:', error.stack);
+      console.log('🚫 ===== DELIVERY REPORT PROCESSING FAILED =====');
       throw error;
     }
   }
@@ -521,6 +620,11 @@ export class WebhookController {
     // Success cases
     if (status === 'DELIVERED' || status === 'SUCCESS') {
       return 'delivered';
+    }
+
+    // Sent status (new in WhatsApp API)
+    if (status === 'SENT') {
+      return 'sent';
     }
 
     // Read status (if supported by Gupshup)
@@ -542,6 +646,11 @@ export class WebhookController {
         return 'delivered';
       }
       
+      // New WhatsApp error codes
+      if (errorCode === 25) {
+        return 'sent'; // SENT status
+      }
+      
       // Failure codes
       if ([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 22, 23, 24, 38].includes(errorCode)) {
         return 'failed';
@@ -550,6 +659,11 @@ export class WebhookController {
 
     // Check specific causes
     if (causeUpper) {
+      const successCauses = ['SENT'];
+      if (successCauses.includes(causeUpper)) {
+        return 'sent';
+      }
+
       const failureCauses = [
         'ABSENT_SUBSCRIBER',
         'UNKNOWN_SUBSCRIBER',

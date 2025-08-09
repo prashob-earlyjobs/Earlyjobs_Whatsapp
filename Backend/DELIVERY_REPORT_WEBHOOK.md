@@ -130,7 +130,7 @@ Uses `MessageService.getMessageByMessageId()` to find messages by their external
 
 1. Log in to https://enterprise.smsgupshup.com
 2. Go to Settings → Advanced Account Settings
-3. Set Realtime Delivery URL to: `https://toolsapis.earlyjobs.ai/api/webhooks/gupshup/delivery-report`
+3. Set Realtime Delivery URL to: `https://toolsapis.earlyjobs.ai/api/webhooks/delivery-report`
 4. Choose GET or POST method (POST recommended for batch processing)
 
 
