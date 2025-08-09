@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { ContactService } from '../services/contactService';
 import { ConversationService } from '../services/conversationService';
 import { MessageService } from '../services/messageService';
+import { DeliveryReportService } from '../services/deliveryReportService';
 import { GupshupService } from '../services/gupshupService';
 import { IWebhookIncoming, validateWebhookIncoming } from '../models/WebhookIncoming';
 import { normalizePhoneNumber, isValidPhoneNumber } from '../utils/phoneNumber';
@@ -590,6 +591,43 @@ export class WebhookController {
       await MessageService.updateMessageStatus((message._id as string), mappedStatus);
       console.log('✅ Message status updated successfully');
 
+      // Save delivery report to database
+      console.log('💾 Saving delivery report to database...');
+      try {
+        // Check if this exact delivery report already exists to prevent duplicates
+        const reportExists = await DeliveryReportService.reportExists(
+          externalId,
+          eventType || status,
+          new Date(eventTs || deliveredTS || Date.now())
+        );
+
+        if (!reportExists) {
+          const deliveryReportData = {
+            messageId: externalId,
+            srcAddr: srcAddr || '',
+            destAddr: destAddr || phoneNo || '',
+            channel: channel || 'UNKNOWN',
+            eventType: (eventType || status) as 'SENT' | 'DELIVERED' | 'READ' | 'FAILED',
+            cause: cause || '',
+            errorCode: (errCode || errorCode || '000'),
+            eventTs: new Date(eventTs || deliveredTS || Date.now()),
+            hsmTemplateId,
+            conversation,
+            pricing,
+            noOfFrags,
+            internalStatus: mappedStatus
+          };
+
+          const savedReport = await DeliveryReportService.createDeliveryReport(deliveryReportData);
+          console.log('✅ Delivery report saved successfully:', savedReport._id);
+        } else {
+          console.log('⚠️ Delivery report already exists, skipping duplicate');
+        }
+      } catch (reportError: any) {
+        console.error('❌ Failed to save delivery report:', reportError);
+        // Don't throw error here - continue processing even if report saving fails
+      }
+
       // Log delivery details
       const deliveryDetails = {
         externalId,
@@ -621,7 +659,7 @@ export class WebhookController {
       return result;
 
     } catch (error: any) {
-      console.error(`❌ Error processing delivery report for externalId: ${externalId}`);
+      console.error(`❌ Error processing delivery report for externalId: ${report.externalId || 'unknown'}`);
       console.error('Error details:', error);
       console.error('Error stack:', error.stack);
       console.log('🚫 ===== DELIVERY REPORT PROCESSING FAILED =====');
@@ -670,6 +708,10 @@ export class WebhookController {
       // New WhatsApp error codes
       if (errorCode === 25) {
         return 'sent'; // SENT status
+      }
+      
+      if (errorCode === 26) {
+        return 'read'; // READ status
       }
       
       // Failure codes

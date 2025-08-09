@@ -40,4 +40,7 @@ router.put('/:id/read', authenticateToken, ConversationController.markAsRead);
 // POST /api/conversations/test-template
 router.post('/test-template', authenticateToken, ConversationController.testTemplateConditions);
 
+// GET /api/conversations/messages/:messageId/delivery-reports
+router.get('/messages/:messageId/delivery-reports', authenticateToken, ConversationController.getMessageDeliveryReports);
+
 export default router; 
