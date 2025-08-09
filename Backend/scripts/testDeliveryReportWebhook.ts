@@ -65,6 +65,32 @@ const deliveryReports = {
       channel: 'SMS',
       noOfFrags: 1
     }
+  },
+
+  // New WhatsApp delivery report format
+  whatsappDeliveryReport: {
+    url: `${WEBHOOK_BASE_URL}/delivery-report`,
+    data: {
+      srcAddr: "919898989898",
+      channel: "WHATSAPP",
+      hsmTemplateId: "6330963",
+      externalId: "4873914210717831261-128116432999904428",
+      cause: "SENT",
+      errorCode: "025",
+      destAddr: "91XXXXXXXXXX",
+      eventType: "SENT",
+      eventTs: 1680527479000,
+      conversation: {
+        expiration_timestamp: 1680613560,
+        origin: {
+          type: "marketing"
+        },
+        id: "072a7f95683c6c2bffef5655c706c50d"
+      },
+      pricing: {
+        category: "marketing"
+      }
+    }
   }
 };
 
@@ -141,6 +167,35 @@ async function testSinglePostDeliveryReport() {
 
   } catch (error: any) {
     console.error('❌ Single POST Delivery Report Test Failed:');
+    if (error.response) {
+      console.error('Status:', error.response.status);
+      console.error('Data:', error.response.data);
+    } else {
+      console.error('Error:', error.message);
+    }
+  }
+}
+
+async function testWhatsAppDeliveryReport() {
+  try {
+    console.log('\n🧪 Testing WhatsApp Delivery Report Webhook...');
+    console.log('URL:', deliveryReports.whatsappDeliveryReport.url);
+    console.log('Data:', JSON.stringify(deliveryReports.whatsappDeliveryReport.data, null, 2));
+
+    const response = await axios.post(deliveryReports.whatsappDeliveryReport.url, 
+      deliveryReports.whatsappDeliveryReport.data,
+      {
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    console.log('✅ WhatsApp Delivery Report Response:');
+    console.log(JSON.stringify(response.data, null, 2));
+
+  } catch (error: any) {
+    console.error('❌ WhatsApp Delivery Report Test Failed:');
     if (error.response) {
       console.error('Status:', error.response.status);
       console.error('Data:', error.response.data);
@@ -233,6 +288,9 @@ async function runAllTests() {
   // Test single POST request
   await testSinglePostDeliveryReport();
 
+  // Test WhatsApp delivery report format
+  await testWhatsAppDeliveryReport();
+
   // Test different status scenarios
   await testStatusScenarios();
 
@@ -253,6 +311,7 @@ export {
   testGetDeliveryReport,
   testPostDeliveryReport,
   testSinglePostDeliveryReport,
+  testWhatsAppDeliveryReport,
   testStatusScenarios,
   runAllTests
 }; 

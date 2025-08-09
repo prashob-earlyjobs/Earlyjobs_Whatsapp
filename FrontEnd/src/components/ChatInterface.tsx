@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
-import { Search, Filter, Send, Paperclip, MoreHorizontal, MessageCircle, User, FileText, RefreshCw } from 'lucide-react';
+import { Search, Filter, Send, Paperclip, MoreHorizontal, MessageCircle, User, FileText, RefreshCw, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { ConversationList } from './ConversationList';
 import { TemplateSelector } from './TemplateSelector';
+import { DeliveryInfoModal } from './DeliveryInfoModal';
 import { useConversationMessages } from '@/hooks/useConversations';
 import { Conversation, Message, LocalTemplate, conversationApi } from '@/lib/api';
 import { toast } from 'sonner';
@@ -33,6 +34,10 @@ export const ChatInterface = ({
   // 24-hour window state
   const [canSendRegularMessages, setCanSendRegularMessages] = useState(true);
   const [hoursRemaining, setHoursRemaining] = useState<number | null>(null);
+  
+  // Delivery info modal state
+  const [deliveryInfoMessage, setDeliveryInfoMessage] = useState<Message | null>(null);
+  const [isDeliveryInfoOpen, setIsDeliveryInfoOpen] = useState(false);
   
   // Refs for scroll management
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -198,6 +203,16 @@ export const ChatInterface = ({
     }, 100);
   };
 
+  const handleDeliveryInfoClick = (message: Message) => {
+    setDeliveryInfoMessage(message);
+    setIsDeliveryInfoOpen(true);
+  };
+
+  const handleCloseDeliveryInfo = () => {
+    setIsDeliveryInfoOpen(false);
+    setDeliveryInfoMessage(null);
+  };
+
   return (
     <div className="flex h-full bg-background">
       {/* Conversation List */}
@@ -291,7 +306,7 @@ export const ChatInterface = ({
                   className={`flex ${message.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}
                 >
                   <div
-                    className={`max-w-sm px-4 py-2 rounded-lg ${
+                    className={`max-w-sm px-4 py-2 rounded-lg relative group ${
                       message.direction === 'outbound'
                         ? 'bg-primary text-primary-foreground'
                         : 'bg-muted text-foreground'
@@ -326,8 +341,22 @@ export const ChatInterface = ({
                         </div>
                       )}
                     </div>
-                    <div className="text-xs opacity-70 mt-1">
-                      {new Date(message.timestamp).toLocaleTimeString()}
+                    <div className="flex items-center justify-between mt-1">
+                      <div className="text-xs opacity-70">
+                        {new Date(message.timestamp).toLocaleTimeString()}
+                      </div>
+                      {/* Delivery Info Button - Only for outbound messages */}
+                      {message.direction === 'outbound' && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity ml-2"
+                          onClick={() => handleDeliveryInfoClick(message)}
+                          title="View delivery information"
+                        >
+                          <Info className="w-3 h-3" />
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -505,6 +534,13 @@ export const ChatInterface = ({
           </div>
         )}
       </div>
+
+      {/* Delivery Info Modal */}
+      <DeliveryInfoModal
+        message={deliveryInfoMessage}
+        isOpen={isDeliveryInfoOpen}
+        onClose={handleCloseDeliveryInfo}
+      />
     </div>
   );
 };
