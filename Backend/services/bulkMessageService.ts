@@ -163,6 +163,20 @@ export class BulkMessageService {
           timestamp: new Date()
         });
         
+        // Add user as participant in the conversation for bulk messages
+        const User = (await import('../models/User')).default;
+        const fullUser = await User.findById(bulkMessage.createdBy).select('name role department');
+        
+        if (fullUser) {
+          await ConversationService.addParticipant(
+            (conversation._id as any).toString(),
+            (bulkMessage.createdBy as any).toString(),
+            fullUser.name,
+            fullUser.role,
+            fullUser.department
+          );
+        }
+        
         sentCount++;
       } catch (error) {
         console.error(`Failed to send message to ${contactData.phoneNumber}:`, error);
