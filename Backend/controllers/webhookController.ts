@@ -47,13 +47,17 @@ export class WebhookController {
         waNumber = '',
         mobile = '',
         name = '',
-        text = '',
+        text = '', // For button messages, text might be undefined
         type = '',
         timestamp = '',
-        image = ''
+        image = '',
+        button = '', // Button payload data
+        context = '', // Context data
+        replyId = '',
+        messageId = ''
       } = req.body || {};
 
-      console.log('📝 Extracted fields:', { waNumber, mobile, name, text, type, timestamp, image });
+      console.log('📝 Extracted fields:', { waNumber, mobile, name, text, type, timestamp, image, button, context, replyId, messageId });
       
       // Debug: Show ALL fields in the request body
       console.log('🔍 ALL REQUEST BODY FIELDS:');
@@ -212,9 +216,34 @@ export class WebhookController {
           break;
 
         case 'button':
+          // Parse button payload if it's a JSON string
+          let buttonPayload: any = {};
+          let contextData: any = {};
+          
+          try {
+            buttonPayload = button ? JSON.parse(button) : {};
+          } catch (e) {
+            console.warn('⚠️ Failed to parse button data:', button);
+            buttonPayload = { raw: button };
+          }
+          
+          try {
+            contextData = context ? JSON.parse(context) : {};
+          } catch (e) {
+            console.warn('⚠️ Failed to parse context data:', context);
+            contextData = { raw: context };
+          }
+          
           messageContent = {
-            text: text || 'Button clicked', // Default text for button interactions
-            buttonData: req.body // Store the full button data for reference
+            text: text || buttonPayload.text || 'Button clicked', // Use button text or fallback
+            buttonData: {
+              payload: buttonPayload,
+              context: contextData,
+              replyId,
+              messageId,
+              rawButton: button,
+              rawContext: context
+            }
           };
           break;
           
