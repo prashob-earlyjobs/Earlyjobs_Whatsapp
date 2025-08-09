@@ -192,6 +192,13 @@ export class WebhookController {
             mediaType: 'video/mp4'
           };
           break;
+
+        case 'button':
+          messageContent = {
+            text: text || 'Button clicked', // Default text for button interactions
+            buttonData: req.body // Store the full button data for reference
+          };
+          break;
           
         default:
           messageContent = { text: text || `Unsupported message type: ${type}` };

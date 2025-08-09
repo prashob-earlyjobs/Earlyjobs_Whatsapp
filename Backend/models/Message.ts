@@ -8,6 +8,7 @@ export interface IMessageContent {
   templateData?: Record<string, any>;
   header?: string;
   footer?: string;
+  buttonData?: Record<string, any>; // For button interactions
 }
 
 export interface IMessage extends Document {
@@ -15,7 +16,7 @@ export interface IMessage extends Document {
   contactId: Types.ObjectId;
   senderId?: Types.ObjectId;
   messageId: string;
-  type: 'text' | 'image' | 'document' | 'template';
+  type: 'text' | 'image' | 'document' | 'template' | 'button';
   content: IMessageContent;
   direction: 'inbound' | 'outbound';
   status: 'sent' | 'delivered' | 'read' | 'failed';
@@ -32,6 +33,7 @@ const MessageContentSchema = new Schema<IMessageContent>({
   templateData: { type: Schema.Types.Mixed },
   header: { type: String },
   footer: { type: String },
+  buttonData: { type: Schema.Types.Mixed }, // For button interactions
 }, { _id: false });
 
 const MessageSchema = new Schema<IMessage>({
@@ -39,7 +41,7 @@ const MessageSchema = new Schema<IMessage>({
   contactId: { type: Schema.Types.ObjectId, ref: 'Contact', required: true },
   senderId: { type: Schema.Types.ObjectId, ref: 'User' },
   messageId: { type: String, required: true },
-  type: { type: String, enum: ['text', 'image', 'document', 'template'], required: true },
+  type: { type: String, enum: ['text', 'image', 'document', 'template', 'button'], required: true },
   content: { type: MessageContentSchema, required: true },
   direction: { type: String, enum: ['inbound', 'outbound'], required: true },
   status: { type: String, enum: ['sent', 'delivered', 'read', 'failed'], default: 'sent' },

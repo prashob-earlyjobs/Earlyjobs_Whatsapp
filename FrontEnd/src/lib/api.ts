@@ -62,7 +62,7 @@ export interface Message {
   contactId: string;
   senderId?: string;
   messageId: string;
-  type: 'text' | 'image' | 'document' | 'audio' | 'video' | 'template';
+  type: 'text' | 'image' | 'document' | 'audio' | 'video' | 'template' | 'button';
   content: {
     text?: string;
     mediaUrl?: string;
@@ -71,6 +71,7 @@ export interface Message {
     templateData?: any;
     header?: string;
     footer?: string;
+    buttonData?: any;
   };
   direction: 'inbound' | 'outbound';
   status?: 'sent' | 'delivered' | 'read' | 'failed';
