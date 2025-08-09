@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Search, Filter, Send, Paperclip, MoreHorizontal, MessageCircle, User, FileText, RefreshCw, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -44,6 +44,10 @@ export const ChatInterface = ({
   // Refs for scroll management
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const isAutoScrolling = useRef(false);
+  
+  // Ref to track sending state to prevent race conditions
+  const isSendingRef = useRef(false);
+  const lastSendTimeRef = useRef(0);
 
   // Get current user context
   const { user } = useAuth();
@@ -119,10 +123,29 @@ export const ChatInterface = ({
     check24HourWindow();
   }, [selectedConversation]);
 
-  const handleSendMessage = async () => {
-    if (!selectedConversation || (!messageText.trim() && !selectedTemplate) || isSending) return;
+  const handleSendMessage = useCallback(async () => {
+    const now = Date.now();
+    const timeSinceLastSend = now - lastSendTimeRef.current;
     
+    // Multiple protection layers to prevent duplicate sends
+    if (!selectedConversation || (!messageText.trim() && !selectedTemplate) || isSending || isSendingRef.current || timeSinceLastSend < 1000) {
+      console.log('🛑 Send blocked:', { 
+        hasConversation: !!selectedConversation,
+        hasContent: !!(messageText.trim() || selectedTemplate),
+        isSending,
+        isSendingRef: isSendingRef.current,
+        timeSinceLastSend,
+        debounceBlocked: timeSinceLastSend < 1000
+      });
+      return;
+    }
+    
+    // Update last send time
+    lastSendTimeRef.current = now;
+    
+    // Set both state and ref
     setIsSending(true);
+    isSendingRef.current = true;
     try {
       let messageData;
       
@@ -134,6 +157,8 @@ export const ChatInterface = ({
         
         if (missingVariables.length > 0) {
           toast.error(`Please fill in all template variables: ${missingVariables.join(', ')}`);
+          setIsSending(false);
+          isSendingRef.current = false;
           return;
         }
         
@@ -172,8 +197,9 @@ export const ChatInterface = ({
       }
     } finally {
       setIsSending(false);
+      isSendingRef.current = false;
     }
-  };
+  }, [selectedConversation, messageText, selectedTemplate, templateVariables, isSending, sendMessage, setCanSendRegularMessages, setMessageText, setSelectedTemplate, setTemplateVariables, setShowTemplateSelector]);
 
   const handleTemplateSelect = (template: LocalTemplate) => {
     setSelectedTemplate(template);
