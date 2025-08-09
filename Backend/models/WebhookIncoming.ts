@@ -26,9 +26,11 @@ export const WebhookIncomingSchema = new Schema<IWebhookIncoming>({
 
 // Validation function for incoming webhook data
 export const validateWebhookIncoming = (data: any): data is IWebhookIncoming => {
-  // Allow empty text for button messages, but text must be a string
-  const isTextValid = typeof data.text === 'string' && 
-    (data.text.length > 0 || data.type === 'button');
+  // For button messages: text can be missing (undefined) or empty string
+  // For other messages: text must be a non-empty string
+  const isTextValid = data.type === 'button' 
+    ? (data.text === undefined || typeof data.text === 'string')
+    : (typeof data.text === 'string' && data.text.length > 0);
   
   return (
     typeof data.waNumber === 'string' &&
