@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 import { useConversations } from '@/hooks/useConversations';
+import { useAuth } from '@/contexts/AuthContext';
 import { Conversation } from '@/lib/api';
 
 interface ConversationListProps {
@@ -20,6 +21,9 @@ export const ConversationList = ({
   onSelectConversation,
   refreshTrigger
 }: ConversationListProps) => {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+  
   const {
     conversations,
     loading,
@@ -258,11 +262,27 @@ export const ConversationList = ({
                   </p>
                 )}
                 
-                {/* Department (if exists) */}
-                {conversation.department && (
-                  <p className="text-xs text-blue-600 mb-1">
-                    📋 {conversation.department}
-                  </p>
+                {/* Department Tags from Participants - Only for Admin */}
+                {isAdmin && conversation.participants && conversation.participants.length > 0 && (
+                  <div className="mb-2">
+                    <div className="flex flex-wrap gap-1">
+                      {conversation.participants.slice(0, 3).map((participant, index) => (
+                        <Badge 
+                          key={index} 
+                          variant="outline" 
+                          className="text-xs px-2 py-0.5 bg-blue-50 text-blue-700 border-blue-200"
+                        >
+                          👤 {participant.name}
+                          {participant.department ? ` - ${participant.department}` : ''}
+                        </Badge>
+                      ))}
+                      {conversation.participants.length > 3 && (
+                        <Badge variant="outline" className="text-xs px-2 py-0.5 bg-gray-50 text-gray-600">
+                          +{conversation.participants.length - 3} more
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
                 )}
                 
                 {/* Status and unread count */}

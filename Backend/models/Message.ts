@@ -23,6 +23,7 @@ export interface IMessage extends Document {
   timestamp: Date;
   isRead: boolean;
   createdAt: Date;
+  updatedAt: Date;
 }
 
 const MessageContentSchema = new Schema<IMessageContent>({
@@ -47,6 +48,6 @@ const MessageSchema = new Schema<IMessage>({
   status: { type: String, enum: ['sent', 'delivered', 'read', 'failed'], default: 'sent' },
   timestamp: { type: Date, required: true },
   isRead: { type: Boolean, default: false },
-}, { timestamps: { createdAt: true, updatedAt: false } });
+}, { timestamps: { createdAt: true, updatedAt: true } });
 
 export default model<IMessage>('Message', MessageSchema); 

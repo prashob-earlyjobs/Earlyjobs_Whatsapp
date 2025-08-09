@@ -166,6 +166,39 @@ export class ConversationService {
       .sort({ lastMessageAt: -1 });
   }
 
+  /**
+   * Get conversations where user has participated (sent messages)
+   * This enables shared conversation visibility - now using participants array
+   */
+  static async getConversationsWithUserParticipation(
+    userId: string, 
+    filters: ConversationFilters = {}
+  ): Promise<IConversation[]> {
+    const query: any = {
+      'participants.userId': userId
+    };
+
+    // Apply additional filters
+    if (filters.status) {
+      query.status = filters.status;
+    }
+
+    if (filters.department) {
+      query.department = filters.department;
+    }
+
+    if (filters.tags && filters.tags.length > 0) {
+      query.tags = { $in: filters.tags };
+    }
+
+    // Note: We don't apply assignedTo filter here since we want shared access
+    
+    return await Conversation.find(query)
+      .populate('contactId', 'name phoneNumber email')
+      .populate('assignedTo', 'name email')
+      .sort({ lastMessageAt: -1 });
+  }
+
   static async updateConversationStatus(
     conversationId: string, 
     status: 'open' | 'closed' | 'pending'
@@ -176,6 +209,46 @@ export class ConversationService {
       { new: true }
     ).populate('contactId', 'name phoneNumber email')
      .populate('assignedTo', 'name email');
+  }
+
+  /**
+   * Add or update participant in conversation when they send a message
+   */
+  static async addParticipant(
+    conversationId: string,
+    userId: string,
+    userName: string,
+    userRole: string,
+    userDepartment?: string
+  ): Promise<void> {
+    const now = new Date();
+    
+    // Check if participant already exists
+    const conversation = await Conversation.findById(conversationId);
+    if (!conversation) {
+      throw new Error('Conversation not found');
+    }
+
+    const existingParticipantIndex = conversation.participants.findIndex(
+      p => p.userId.toString() === userId
+    );
+
+    if (existingParticipantIndex >= 0) {
+      // Update existing participant's last message time
+      conversation.participants[existingParticipantIndex].lastMessageAt = now;
+    } else {
+      // Add new participant
+      conversation.participants.push({
+        userId: userId as any,
+        name: userName,
+        role: userRole,
+        department: userDepartment,
+        firstMessageAt: now,
+        lastMessageAt: now
+      });
+    }
+
+    await conversation.save();
   }
 
   static async assignConversation(

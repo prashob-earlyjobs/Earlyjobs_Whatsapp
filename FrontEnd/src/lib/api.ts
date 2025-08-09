@@ -80,6 +80,15 @@ export interface Message {
   updatedAt: string;
 }
 
+export interface Participant {
+  userId: string;
+  name: string;
+  role: string;
+  department?: string;
+  firstMessageAt: string;
+  lastMessageAt: string;
+}
+
 export interface Conversation {
   _id: string;
   contactId: Contact;
@@ -90,6 +99,7 @@ export interface Conversation {
   lastMessage?: Message;
   lastMessageAt?: string;
   unreadCount: number;
+  participants: Participant[];
   createdAt: string;
   updatedAt: string;
 }

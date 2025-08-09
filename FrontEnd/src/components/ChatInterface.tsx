@@ -8,6 +8,7 @@ import { TemplateSelector } from './TemplateSelector';
 import { DeliveryInfoModal } from './DeliveryInfoModal';
 import { MessageTickIndicator } from './MessageStatusIndicator';
 import { useConversationMessages } from '@/hooks/useConversations';
+import { useAuth } from '@/contexts/AuthContext';
 import { Conversation, Message, LocalTemplate, conversationApi } from '@/lib/api';
 import { toast } from 'sonner';
 
@@ -43,6 +44,10 @@ export const ChatInterface = ({
   // Refs for scroll management
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const isAutoScrolling = useRef(false);
+
+  // Get current user context
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
 
   // Get messages for the selected conversation
   const {
@@ -115,7 +120,7 @@ export const ChatInterface = ({
   }, [selectedConversation]);
 
   const handleSendMessage = async () => {
-    if (!selectedConversation || (!messageText.trim() && !selectedTemplate)) return;
+    if (!selectedConversation || (!messageText.trim() && !selectedTemplate) || isSending) return;
     
     setIsSending(true);
     try {
@@ -361,6 +366,9 @@ export const ChatInterface = ({
                         </div>
                       )}
                     </div>
+                    
+
+                    
                     <div className="flex items-center justify-between mt-1">
                       <div className="flex items-center space-x-2">
                         <div className="text-xs opacity-70">
@@ -522,7 +530,12 @@ export const ChatInterface = ({
                   }
                   value={messageText}
                   onChange={(e) => setMessageText(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && handleSendMessage()}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendMessage();
+                    }
+                  }}
                   disabled={isSending || !canSendRegularMessages}
                   className="flex-1"
                 />

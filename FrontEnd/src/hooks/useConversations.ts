@@ -246,10 +246,16 @@ export const useConversationMessages = (conversationId: string | null): UseConve
     try {
       const response = await conversationApi.sendMessage(conversationId, messageData);
       
-      // Add the new message to the beginning of the array since backend returns
-      // messages in descending order (newest first). When ChatInterface reverses
-      // the array for display, the new message will appear at the bottom.
-      setMessages(prev => [response.data.message, ...prev]);
+      // Add the new message to the beginning of the array, but check for duplicates first
+      setMessages(prev => {
+        const existingIds = new Set(prev.map(msg => msg._id));
+        if (!existingIds.has(response.data.message._id)) {
+          console.log(`📤 Adding sent message to local state`);
+          return [response.data.message, ...prev];
+        }
+        console.log(`⚠️ Message ${response.data.message._id} already exists, skipping duplicate`);
+        return prev;
+      });
       setLastMessageTimestamp(response.data.message.timestamp);
       
     } catch (error: any) {
@@ -295,8 +301,18 @@ export const useConversationMessages = (conversationId: string | null): UseConve
         
         // Check if we have new messages
         if (newMessages.length > 0) {
-          // Add new messages to the beginning (they're already sorted desc by timestamp)
-          setMessages(prev => [...newMessages, ...prev]);
+          // Filter out messages that are already in the current state to prevent duplicates
+          setMessages(prev => {
+            const existingIds = new Set(prev.map(msg => msg._id));
+            const uniqueNewMessages = newMessages.filter(msg => !existingIds.has(msg._id));
+            
+            if (uniqueNewMessages.length > 0) {
+              console.log(`📨 Adding ${uniqueNewMessages.length} new unique messages`);
+              return [...uniqueNewMessages, ...prev];
+            }
+            return prev;
+          });
+          
           setOffset(prev => prev + newMessages.length);
           // Update timestamp to the most recent message
           setLastMessageTimestamp(newMessages[0].timestamp);

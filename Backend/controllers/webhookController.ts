@@ -57,28 +57,10 @@ export class WebhookController {
         messageId = ''
       } = req.body || {};
 
-      console.log('📝 Extracted fields:', { waNumber, mobile, name, text, type, timestamp, image, button, context, replyId, messageId });
-      
-      // Debug: Show ALL fields in the request body
-      console.log('🔍 ALL REQUEST BODY FIELDS:');
-      console.log('Raw req.body keys:', Object.keys(req.body));
-      console.log('Raw req.body values:', req.body);
-      
-      // Debug: Test validation step by step
-      console.log('🧪 Validation Debug:');
-      console.log('- waNumber type:', typeof req.body.waNumber, 'value:', req.body.waNumber);
-      console.log('- mobile type:', typeof req.body.mobile, 'value:', req.body.mobile);
-      console.log('- name type:', typeof req.body.name, 'value:', req.body.name);
-      console.log('- text type:', typeof req.body.text, 'value:', `"${req.body.text}"`);
-      console.log('- type type:', typeof req.body.type, 'value:', req.body.type);
-      console.log('- timestamp type:', typeof req.body.timestamp, 'value:', req.body.timestamp);
-      console.log('- image type:', typeof req.body.image, 'value:', req.body.image);
+      console.log('📝 Extracted fields:', { waNumber, mobile, name, text, type, timestamp, image });
 
       // Validate required fields using the model validator
-      const validationResult = validateWebhookIncoming(req.body);
-      console.log('🎯 Validation result:', validationResult);
-      
-      if (!validationResult) {
+      if (!validateWebhookIncoming(req.body)) {
         console.error('❌ Missing or invalid required fields in webhook:', { waNumber, mobile, name, text, type, timestamp });
         return res.status(400).json({
           success: false,

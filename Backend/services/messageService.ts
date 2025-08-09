@@ -70,7 +70,10 @@ export class MessageService {
   ): Promise<IMessage[]> {
     return await Message.find({ 
       conversationId,
-      timestamp: { $gt: since }
+      $or: [
+        { timestamp: { $gt: since } },    // New messages since timestamp
+        { updatedAt: { $gt: since } }     // Updated messages (status changes) since timestamp
+      ]
     })
       .populate('senderId', 'name email')
       .sort({ timestamp: -1 });
