@@ -317,6 +317,25 @@ export const ChatInterface = ({
                       {message.type === 'text' && message.content.text && (
                         <p className="whitespace-pre-wrap">{message.content.text}</p>
                       )}
+                      {message.type === 'button' && (
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">
+                              🔘 Button Response
+                            </span>
+                          </div>
+                          {message.content.text ? (
+                            <p className="whitespace-pre-wrap font-medium">{message.content.text}</p>
+                          ) : (
+                            <p className="italic">Button clicked</p>
+                          )}
+                          {message.content.buttonData?.payload?.payload && message.content.buttonData.payload.payload !== message.content.text && (
+                            <p className="text-xs text-muted-foreground">
+                              Payload: {message.content.buttonData.payload.payload}
+                            </p>
+                          )}
+                        </div>
+                      )}
                       {message.type === 'template' && (
                         <div className="space-y-1">
                           {/* Header */}
