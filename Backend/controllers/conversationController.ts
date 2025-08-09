@@ -90,6 +90,23 @@ export class ConversationController {
       const result = await ConversationService.findOrCreateConversation(conversationData);
       const conversation = result.conversation;
       
+      // Add the creator as a participant in the conversation
+      if (userId && req.user) {
+        // Fetch full user data for participant info
+        const User = (await import('../models/User')).default;
+        const fullUser = await User.findById(userId).select('name role department');
+        
+        if (fullUser) {
+          await ConversationService.addParticipant(
+            conversation._id as string,
+            userId,
+            fullUser.name,
+            fullUser.role,
+            fullUser.department
+          );
+        }
+      }
+      
       let message = 'Conversation started successfully';
       if (!result.isNew && !result.wasReopened) {
         message = 'Using existing conversation';
@@ -120,6 +137,22 @@ export class ConversationController {
           };
 
           sentMessage = await MessageService.createMessage(messageData);
+          
+          // Update participant's lastMessageAt since they sent the initial message
+          if (userId && req.user) {
+            const User = (await import('../models/User')).default;
+            const fullUser = await User.findById(userId).select('name role department');
+            
+            if (fullUser) {
+              await ConversationService.addParticipant(
+                conversation._id as string,
+                userId,
+                fullUser.name,
+                fullUser.role,
+                fullUser.department
+              );
+            }
+          }
         } catch (gupshupError: any) {
           console.error('Failed to send initial message:', gupshupError);
           // Don't fail the conversation creation if message sending fails
@@ -253,6 +286,8 @@ export class ConversationController {
   static async getConversations(req: AuthRequest, res: Response) {
     try {
       const { status, assignedTo, tags } = req.query;
+      const userId = req.user?.id;
+      const userRole = req.user?.role;
       
       const filters: ConversationFilters = {};
       
@@ -268,7 +303,26 @@ export class ConversationController {
         filters.tags = Array.isArray(tags) ? tags as string[] : [tags as string];
       }
 
-      const conversations = await ConversationService.getAllConversations(filters);
+      // Role-based filtering with shared conversation support
+      let conversations: any[];
+      
+      if (userRole === 'admin') {
+        // Admin can see all conversations - no additional filtering needed
+        console.log('👑 Admin user - showing all conversations');
+        conversations = await ConversationService.getAllConversations(filters);
+      } else {
+        // Regular users see conversations where they have participated (sent messages)
+        console.log(`👤 Regular user (${userRole}) - showing conversations with participation`);
+        if (!userId) {
+          return res.status(401).json({
+            success: false,
+            message: 'User ID not found in token'
+          });
+        }
+        conversations = await ConversationService.getConversationsWithUserParticipation(userId, filters);
+      }
+
+      console.log(`📊 Retrieved ${conversations.length} conversations for user ${userId} (role: ${userRole})`);
 
       res.json({
         success: true,
@@ -289,9 +343,11 @@ export class ConversationController {
   }
 
   // GET /api/conversations/:id
-  static async getConversationById(req: Request, res: Response) {
+  static async getConversationById(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params;
+      const userId = req.user?.id;
+      const userRole = req.user?.role;
 
       if (!id) {
         return res.status(400).json({
@@ -307,6 +363,28 @@ export class ConversationController {
           success: false,
           message: 'Conversation not found'
         });
+      }
+
+      // Role-based access control with shared conversation support
+      if (userRole !== 'admin') {
+        if (!userId) {
+          return res.status(401).json({
+            success: false,
+            message: 'User ID not found in token'
+          });
+        }
+        
+        // Check if user has participated in this conversation using participants array
+        const hasParticipated = conversation.participants.some(
+          participant => participant.userId.toString() === userId
+        );
+
+        if (!hasParticipated) {
+          return res.status(403).json({
+            success: false,
+            message: 'Access denied. You can only view conversations where you have participated.'
+          });
+        }
       }
 
       res.json({
@@ -716,6 +794,23 @@ export class ConversationController {
 
         const message = await MessageService.createMessage(messageData);
 
+        // Add user as participant in the conversation
+        if (senderId && req.user) {
+          // Fetch full user data for participant info
+          const User = (await import('../models/User')).default;
+          const fullUser = await User.findById(senderId).select('name role department');
+          
+          if (fullUser) {
+            await ConversationService.addParticipant(
+              id,
+              senderId,
+              fullUser.name,
+              fullUser.role,
+              fullUser.department
+            );
+          }
+        }
+
         res.status(201).json({
           success: true,
           message: 'Message sent successfully to WhatsApp',
@@ -742,6 +837,23 @@ export class ConversationController {
         };
 
         const message = await MessageService.createMessage(messageData);
+        
+        // Add user as participant in the conversation (even for failed messages)
+        if (senderId && req.user) {
+          // Fetch full user data for participant info
+          const User = (await import('../models/User')).default;
+          const fullUser = await User.findById(senderId).select('name role department');
+          
+          if (fullUser) {
+            await ConversationService.addParticipant(
+              id,
+              senderId,
+              fullUser.name,
+              fullUser.role,
+              fullUser.department
+            );
+          }
+        }
         
         // Update message status to failed
         await MessageService.updateMessageStatus(message._id as string, 'failed');
