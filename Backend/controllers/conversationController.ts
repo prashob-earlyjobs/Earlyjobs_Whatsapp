@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { ConversationService, ConversationFilters, CreateConversationData } from '../services/conversationService';
 import { MessageService, CreateMessageData } from '../services/messageService';
 import { ContactService, CreateContactData } from '../services/contactService';
+import { DeliveryReportService } from '../services/deliveryReportService';
 import { GupshupService } from '../services/gupshupService';
 import { TemplateService } from '../services/templateService';
 import { AuthRequest } from '../middleware/auth';
@@ -927,6 +928,56 @@ export class ConversationController {
         success: false,
         message: 'Failed to test template conditions',
         error: error.message
+      });
+    }
+  }
+
+  // GET /api/conversations/messages/:messageId/delivery-reports
+  static async getMessageDeliveryReports(req: AuthRequest, res: Response) {
+    try {
+      const { messageId } = req.params;
+
+      if (!messageId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Message ID is required'
+        });
+      }
+
+      // Get the message to verify it exists and user has access
+      const message = await MessageService.getMessageByMessageId(messageId);
+      if (!message) {
+        return res.status(404).json({
+          success: false,
+          message: 'Message not found'
+        });
+      }
+
+      // Get delivery reports for this message
+      const deliveryReports = await DeliveryReportService.getDeliveryReportsByMessageId(messageId);
+      const latestReport = await DeliveryReportService.getLatestDeliveryReport(messageId);
+
+      res.json({
+        success: true,
+        data: {
+          message: {
+            _id: message._id,
+            messageId: message.messageId,
+            type: message.type,
+            status: message.status,
+            timestamp: message.timestamp
+          },
+          deliveryReports,
+          latestReport,
+          totalReports: deliveryReports.length
+        }
+      });
+
+    } catch (error: any) {
+      console.error('Get delivery reports error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error while fetching delivery reports'
       });
     }
   }

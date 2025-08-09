@@ -37,6 +37,25 @@ export interface Contact {
   tags?: string[];
 }
 
+export interface DeliveryReport {
+  _id: string;
+  messageId: string;
+  srcAddr: string;
+  destAddr: string;
+  channel: string;
+  eventType: 'SENT' | 'DELIVERED' | 'READ' | 'FAILED';
+  cause: string;
+  errorCode: string;
+  eventTs: string;
+  hsmTemplateId?: string;
+  conversation?: any;
+  pricing?: any;
+  noOfFrags?: number;
+  internalStatus: 'sent' | 'delivered' | 'read' | 'failed';
+  processedAt: string;
+  createdAt: string;
+}
+
 export interface Message {
   _id: string;
   conversationId: string;
@@ -856,5 +875,35 @@ export const userApi = {
     return apiRequest<{
       stats: UserStats;
     }>('/users/stats');
+  },
+};
+
+// Delivery Report API
+export const deliveryReportApi = {
+  // Get delivery reports for a specific message
+  async getMessageDeliveryReports(messageId: string): Promise<ApiResponse<{
+    message: {
+      _id: string;
+      messageId: string;
+      type: string;
+      status: string;
+      timestamp: string;
+    };
+    deliveryReports: DeliveryReport[];
+    latestReport: DeliveryReport | null;
+    totalReports: number;
+  }>> {
+    return apiRequest<{
+      message: {
+        _id: string;
+        messageId: string;
+        type: string;
+        status: string;
+        timestamp: string;
+      };
+      deliveryReports: DeliveryReport[];
+      latestReport: DeliveryReport | null;
+      totalReports: number;
+    }>(`/conversations/messages/${messageId}/delivery-reports`);
   },
 }; 

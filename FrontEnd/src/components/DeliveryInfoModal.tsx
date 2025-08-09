@@ -1,9 +1,10 @@
-import { useState } from 'react';
-import { X, CheckCircle, XCircle, Clock, Info } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { X, CheckCircle, XCircle, Clock, Info, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { Message } from '@/lib/api';
+import { Message, DeliveryReport, deliveryReportApi } from '@/lib/api';
+import { toast } from 'sonner';
 
 interface DeliveryInfoModalProps {
   message: Message | null;
@@ -12,6 +13,33 @@ interface DeliveryInfoModalProps {
 }
 
 export const DeliveryInfoModal = ({ message, isOpen, onClose }: DeliveryInfoModalProps) => {
+  const [deliveryReports, setDeliveryReports] = useState<DeliveryReport[]>([]);
+  const [latestReport, setLatestReport] = useState<DeliveryReport | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  // Fetch delivery reports when modal opens and message changes
+  useEffect(() => {
+    if (isOpen && message?.messageId) {
+      fetchDeliveryReports();
+    }
+  }, [isOpen, message?.messageId]);
+
+  const fetchDeliveryReports = async () => {
+    if (!message?.messageId) return;
+
+    setLoading(true);
+    try {
+      const response = await deliveryReportApi.getMessageDeliveryReports(message.messageId);
+      setDeliveryReports(response.data.deliveryReports);
+      setLatestReport(response.data.latestReport);
+    } catch (error: any) {
+      console.error('Failed to fetch delivery reports:', error);
+      toast.error('Failed to load delivery reports');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (!message) return null;
 
   const getStatusIcon = (status: string) => {
@@ -156,33 +184,56 @@ export const DeliveryInfoModal = ({ message, isOpen, onClose }: DeliveryInfoModa
               </div>
             )}
 
-            {/* Status Timeline */}
+            {/* Delivery Reports Timeline */}
             <div className="p-3 bg-gray-50 rounded-lg border">
-              <p className="text-sm font-medium mb-2">Status Timeline:</p>
-              <div className="space-y-2">
-                <div className="flex items-center space-x-2">
-                  <CheckCircle className="w-3 h-3 text-green-500" />
-                  <span className="text-xs">Message sent at {formatTimestamp(message.timestamp).time}</span>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-medium">Delivery Timeline:</p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={fetchDeliveryReports}
+                  disabled={loading}
+                  className="h-6 w-6 p-0"
+                  title="Refresh delivery reports"
+                >
+                  <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
+                </Button>
+              </div>
+              
+              {loading ? (
+                <div className="text-xs text-muted-foreground">Loading delivery reports...</div>
+              ) : deliveryReports.length > 0 ? (
+                <div className="space-y-2">
+                  {deliveryReports.map((report, index) => (
+                    <div key={report._id} className="flex items-center space-x-2">
+                      {getStatusIcon(report.internalStatus)}
+                      <div className="flex-1">
+                        <span className="text-xs">
+                          {getStatusText(report.internalStatus)} at {formatTimestamp(report.eventTs).time}
+                        </span>
+                        {report.cause && report.cause !== 'SUCCESS' && (
+                          <span className="text-xs text-muted-foreground ml-1">
+                            ({report.cause})
+                          </span>
+                        )}
+                      </div>
+                      <Badge variant="outline" className="text-xs h-5">
+                        {report.eventType}
+                      </Badge>
+                    </div>
+                  ))}
                 </div>
-                {message.status === 'delivered' && (
+              ) : (
+                <div className="space-y-2">
                   <div className="flex items-center space-x-2">
                     <CheckCircle className="w-3 h-3 text-green-500" />
-                    <span className="text-xs">Delivered to recipient</span>
+                    <span className="text-xs">Message sent at {formatTimestamp(message.timestamp).time}</span>
                   </div>
-                )}
-                {message.status === 'read' && (
-                  <div className="flex items-center space-x-2">
-                    <CheckCircle className="w-3 h-3 text-blue-500" />
-                    <span className="text-xs">Read by recipient</span>
+                  <div className="text-xs text-muted-foreground">
+                    No delivery reports available yet
                   </div>
-                )}
-                {message.status === 'failed' && (
-                  <div className="flex items-center space-x-2">
-                    <XCircle className="w-3 h-3 text-red-500" />
-                    <span className="text-xs">Delivery failed</span>
-                  </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

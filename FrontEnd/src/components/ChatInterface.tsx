@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { ConversationList } from './ConversationList';
 import { TemplateSelector } from './TemplateSelector';
 import { DeliveryInfoModal } from './DeliveryInfoModal';
+import { MessageTickIndicator } from './MessageStatusIndicator';
 import { useConversationMessages } from '@/hooks/useConversations';
 import { Conversation, Message, LocalTemplate, conversationApi } from '@/lib/api';
 import { toast } from 'sonner';
@@ -342,8 +343,17 @@ export const ChatInterface = ({
                       )}
                     </div>
                     <div className="flex items-center justify-between mt-1">
-                      <div className="text-xs opacity-70">
-                        {new Date(message.timestamp).toLocaleTimeString()}
+                      <div className="flex items-center space-x-2">
+                        <div className="text-xs opacity-70">
+                          {new Date(message.timestamp).toLocaleTimeString()}
+                        </div>
+                        {/* Status Tick - Only for outbound messages */}
+                        {message.direction === 'outbound' && (
+                          <MessageTickIndicator 
+                            status={message.status} 
+                            className="w-4 h-4"
+                          />
+                        )}
                       </div>
                       {/* Delivery Info Button - Only for outbound messages */}
                       {message.direction === 'outbound' && (
