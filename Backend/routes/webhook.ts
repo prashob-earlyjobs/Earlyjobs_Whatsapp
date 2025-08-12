@@ -19,4 +19,7 @@ router.get('/test', WebhookController.testWebhook);
 // Debug webhook endpoint
 router.post('/debug', WebhookController.debugWebhook);
 
+// External portal notification webhook
+router.post('/notification', WebhookController.handleExternalNotification);
+
 export default router; 

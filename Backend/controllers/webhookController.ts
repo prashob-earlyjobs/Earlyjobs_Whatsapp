@@ -6,6 +6,7 @@ import { DeliveryReportService } from '../services/deliveryReportService';
 import { GupshupService } from '../services/gupshupService';
 import { IWebhookIncoming, validateWebhookIncoming } from '../models/WebhookIncoming';
 import { normalizePhoneNumber, isValidPhoneNumber } from '../utils/phoneNumber';
+import Conversation from '../models/Conversation';
 
 export class WebhookController {
   // POST /api/webhooks/gupshup/incoming - Handle incoming WhatsApp messages
@@ -787,5 +788,149 @@ export class WebhookController {
     // Default to sent if we can't determine the status
     console.warn(`⚠️ Unknown status mapping for: ${eventType}, cause: ${cause}, errCode: ${errCode}`);
     return 'sent';
+  }
+
+    // POST /api/webhooks/notification - Handle external portal notifications (already sent via Gupshup)
+  static async handleExternalNotification(req: Request, res: Response) {
+    try {
+      console.log('📥 External notification webhook received (message already sent via Gupshup):');
+      console.log('Headers:', JSON.stringify(req.headers, null, 2));
+      console.log('Body:', JSON.stringify(req.body, null, 2));
+
+      // Validate request body
+      if (!req.body || typeof req.body !== 'object') {
+        console.error('❌ Request body is missing or invalid');
+        return res.status(400).json({
+          success: false,
+          message: 'Request body is missing or invalid. Expected JSON object.'
+        });
+      }
+
+      // Extract required fields
+      const { 
+        phoneNumber, 
+        message, 
+        senderName = 'External Portal',
+        messageType = 'text',
+        templateId,
+        templateData = {},
+        gupshupMessageId, // Message ID from Gupshup
+        timestamp = new Date().toISOString(),
+        status = 'sent' // Default status since message was already sent
+      } = req.body;
+
+      // Validate required fields
+      if (!phoneNumber || !message) {
+        console.error('❌ Missing required fields:', { phoneNumber, message });
+        return res.status(400).json({
+          success: false,
+          message: 'phoneNumber and message are required fields'
+        });
+      }
+
+      // Normalize phone number
+      const normalizedPhone = normalizePhoneNumber(phoneNumber);
+      if (!isValidPhoneNumber(normalizedPhone)) {
+        console.error('❌ Invalid phone number format:', phoneNumber);
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid phone number format'
+        });
+      }
+
+      console.log('📱 Processing external portal message for:', { 
+        phoneNumber: normalizedPhone, 
+        message, 
+        senderName, 
+        messageType,
+        templateId,
+        gupshupMessageId,
+        timestamp
+      });
+
+      // Find or create contact
+      let contact = await ContactService.getContactByPhone(normalizedPhone);
+      if (!contact) {
+        console.log('👤 Creating new contact for:', normalizedPhone);
+        contact = await ContactService.createContact({
+          phoneNumber: normalizedPhone,
+          name: senderName
+        });
+      }
+
+      // Find or create conversation
+      let conversation = await ConversationService.getConversationByContactId(contact._id as string);
+      if (!conversation) {
+        console.log('💬 Creating new conversation for contact:', contact._id);
+        conversation = await ConversationService.createConversation({
+          contactId: contact._id as string,
+          assignedTo: undefined // System-generated conversation
+        });
+      }
+
+      // Prepare message content based on type
+      let messageContent: any;
+      if (messageType === 'template' && templateId) {
+        messageContent = {
+          templateId,
+          templateData,
+          text: message // Fallback text
+        };
+      } else {
+        messageContent = {
+          text: message
+        };
+      }
+
+      // Save message to database (already sent via Gupshup)
+      console.log('💾 Saving external portal message to database...');
+      const savedMessage = await MessageService.createMessage({
+        conversationId: conversation._id as string,
+        contactId: contact._id as string,
+        senderId: undefined, // External portal message
+        messageId: gupshupMessageId || `ext_${Date.now()}`, // Use Gupshup ID or generate external ID
+        type: messageType,
+        content: messageContent,
+        direction: 'outbound', // External portal messages are outbound
+        timestamp: new Date(timestamp)
+      });
+
+      // Update conversation last message timestamp
+      await Conversation.findByIdAndUpdate(
+        conversation._id,
+        { 
+          lastMessageAt: new Date(timestamp),
+          unreadCount: 0
+        }
+      );
+
+      console.log('✅ External portal message saved successfully:', {
+        messageId: savedMessage._id,
+        conversationId: conversation._id,
+        contactId: contact._id,
+        gupshupMessageId: gupshupMessageId,
+        status: status
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: 'External portal message stored successfully',
+        data: {
+          messageId: savedMessage._id,
+          conversationId: conversation._id,
+          contactId: contact._id,
+          gupshupMessageId: gupshupMessageId,
+          status: status
+        }
+      });
+
+    } catch (error: any) {
+      console.error('❌ Error processing external portal message:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Internal server error',
+        error: error.message
+      });
+    }
   }
 } 
