@@ -37,6 +37,7 @@ export const BulkMessaging = ({ onBulkMessageComplete }: BulkMessagingProps) => 
   const [bulkMessageName, setBulkMessageName] = useState('');
   const [sendingProgress, setSendingProgress] = useState(0);
   const [bulkMessageId, setBulkMessageId] = useState<string | null>(null);
+  const [actualMessageCount, setActualMessageCount] = useState(0); // Track actual message count from backend
 
   // Fetch templates
   const { data: templatesData, isLoading: isLoadingTemplates } = useQuery({
@@ -84,6 +85,7 @@ export const BulkMessaging = ({ onBulkMessageComplete }: BulkMessagingProps) => 
           onBulkMessageComplete();
         }
         // Start polling for progress
+        console.log('🚀 About to start polling with ID:', response.data.bulkMessage._id);
         pollProgress(response.data.bulkMessage._id);
       }
     },
@@ -94,13 +96,27 @@ export const BulkMessaging = ({ onBulkMessageComplete }: BulkMessagingProps) => 
 
   // Poll for progress
   const pollProgress = async (id: string) => {
+    console.log('🔄 Starting progress polling for bulk message:', id);
     const pollInterval = setInterval(async () => {
       try {
+        console.log('📡 Polling for progress...');
         const response = await bulkMessageApi.getBulkMessageStatus(id);
+        console.log('📊 Polling response:', response);
+        
         if (response.success) {
+          console.log('✅ Progress data received:', {
+            progress: response.data.progress,
+            status: response.data.status,
+            sentCount: response.data.sentCount,
+            failedCount: response.data.failedCount,
+            totalCount: response.data.totalCount
+          });
+          
           setSendingProgress(response.data.progress);
+          setActualMessageCount(response.data.totalCount);
           
           if (response.data.status === 'completed' || response.data.status === 'failed') {
+            console.log('🏁 Bulk message finished with status:', response.data.status);
             clearInterval(pollInterval);
             if (response.data.status === 'completed') {
               toast.success('All messages sent successfully!');
@@ -112,8 +128,11 @@ export const BulkMessaging = ({ onBulkMessageComplete }: BulkMessagingProps) => 
               toast.error('Some messages failed to send');
             }
           }
+        } else {
+          console.error('❌ Polling response failed:', response);
         }
       } catch (error) {
+        console.error('❌ Polling error:', error);
         clearInterval(pollInterval);
       }
     }, 2000);
@@ -305,6 +324,7 @@ export const BulkMessaging = ({ onBulkMessageComplete }: BulkMessagingProps) => 
     setBulkMessageName('');
     setSendingProgress(0);
     setBulkMessageId(null);
+    setActualMessageCount(0); // Reset actual message count
   };
 
   const localTemplates = templatesData?.data?.templates || [];
@@ -687,11 +707,38 @@ export const BulkMessaging = ({ onBulkMessageComplete }: BulkMessagingProps) => 
               {sendingProgress < 100 ? 'Sending Messages...' : 'Messages Sent Successfully!'}
             </h3>
             <div className="space-y-4">
+              {/* Debug info */}
+              <div className="p-2 bg-gray-100 rounded text-xs">
+                <strong>Debug Info:</strong> Progress: {sendingProgress}%, 
+                Actual Count: {actualMessageCount}, 
+                Valid Contacts: {validContacts.length}, 
+                Bulk Message ID: {bulkMessageId}
+              </div>
+              
+              {/* Manual test button */}
+              {bulkMessageId && (
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={async () => {
+                    console.log('🧪 Manual test - calling API...');
+                    try {
+                      const response = await bulkMessageApi.getBulkMessageStatus(bulkMessageId);
+                      console.log('🧪 Manual test response:', response);
+                    } catch (error) {
+                      console.error('🧪 Manual test error:', error);
+                    }
+                  }}
+                >
+                  Test API Call
+                </Button>
+              )}
+              
               <Progress value={sendingProgress} className="w-full" />
               <p className="text-sm text-muted-foreground text-center">
                 {sendingProgress < 100 
-                  ? `Sending ${Math.floor((sendingProgress / 100) * validContacts.length)} of ${validContacts.length} messages...`
-                  : `All ${validContacts.length} messages sent successfully!`
+                  ? `Sending ${Math.floor((sendingProgress / 100) * (actualMessageCount || validContacts.length))} of ${actualMessageCount || validContacts.length} messages...`
+                  : `All ${actualMessageCount || validContacts.length} messages sent successfully!`
                 }
               </p>
               {sendingProgress >= 100 && (

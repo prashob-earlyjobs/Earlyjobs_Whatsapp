@@ -22,17 +22,45 @@ export interface CreateBulkMessageData {
 
 export class BulkMessageService {
   static async createBulkMessage(bulkData: CreateBulkMessageData): Promise<IBulkMessage> {
+    console.log('🔍 ===== CREATING BULK MESSAGE =====');
+    console.log('📋 Bulk data received:', {
+      name: bulkData.name,
+      templateId: bulkData.templateId,
+      contactsCount: bulkData.contacts.length,
+      contactsDataCount: bulkData.contactsData.length,
+      createdBy: bulkData.createdBy
+    });
+
     // Validate template exists
     const template = await Template.findById(bulkData.templateId);
     if (!template) {
+      console.error('❌ Template not found:', bulkData.templateId);
       throw new Error('Template not found');
     }
+    console.log('✅ Template found:', template.name);
 
     // Validate contacts exist
+    console.log('🔍 Validating contacts...');
+    console.log('📱 Contact IDs to validate:', bulkData.contacts);
+    
     const contacts = await Contact.find({ _id: { $in: bulkData.contacts } });
+    console.log('📊 Contacts found in database:', contacts.length);
+    console.log('📊 Expected contacts count:', bulkData.contacts.length);
+    
     if (contacts.length !== bulkData.contacts.length) {
-      throw new Error('Some contacts not found');
+      console.error('❌ Contact validation failed!');
+      console.error('📱 Expected contacts:', bulkData.contacts);
+      console.error('📱 Found contacts:', contacts.map(c => ({ id: c._id, name: c.name, phone: c.phoneNumber })));
+      
+      // Find which contacts are missing
+      const foundIds = contacts.map(c => (c._id as any).toString());
+      const missingIds = bulkData.contacts.filter(id => !foundIds.includes(id.toString()));
+      console.error('🚫 Missing contact IDs:', missingIds);
+      
+      throw new Error(`Some contacts not found. Expected: ${bulkData.contacts.length}, Found: ${contacts.length}, Missing: ${missingIds.length}`);
     }
+
+    console.log('✅ All contacts validated successfully');
 
     const bulkMessage = new BulkMessage({
       name: bulkData.name,
@@ -44,7 +72,11 @@ export class BulkMessageService {
       createdBy: bulkData.createdBy,
     });
 
-    return await bulkMessage.save();
+    const savedBulkMessage = await bulkMessage.save();
+    console.log('✅ Bulk message created successfully:', savedBulkMessage._id);
+    console.log('🏁 ===== BULK MESSAGE CREATION COMPLETED =====');
+    
+    return savedBulkMessage;
   }
 
   static async getBulkMessageById(bulkMessageId: string): Promise<IBulkMessage | null> {
@@ -95,6 +127,8 @@ export class BulkMessageService {
     let sentCount = 0;
     let failedCount = 0;
 
+    console.log(`🚀 Starting to process ${contactsData.length} messages`);
+
     for (let i = 0; i < contactsData.length; i++) {
       const contactData = contactsData[i];
       
@@ -131,9 +165,13 @@ export class BulkMessageService {
         const header = template.header?.content;
         const footer = template.footer;
         
-        // Send message via Gupshup
+        // Get the normalized phone number from the contact record
+        const contact = await (await import('../models/Contact')).default.findById(contactData.contactId);
+        const normalizedPhoneNumber = contact ? contact.phoneNumber : contactData.phoneNumber;
+        
+        // Send message via Gupshup using normalized phone number
         const gupshupResponse = await GupshupService.sendTemplateMessage(
-          contactData.phoneNumber,
+          normalizedPhoneNumber,
           renderedText,
           header,
           footer
@@ -178,26 +216,57 @@ export class BulkMessageService {
         }
         
         sentCount++;
+        
+        // Update database with current progress for real-time updates
+        bulkMessage.sentCount = sentCount;
+        bulkMessage.failedCount = failedCount;
+        await bulkMessage.save();
+        console.log(`💾 Database updated (success) - sentCount: ${sentCount}, failedCount: ${failedCount}`);
+        
       } catch (error) {
         console.error(`Failed to send message to ${contactData.phoneNumber}:`, error);
         failedCount++;
+        
+        // Update database with current progress for real-time updates
+        bulkMessage.sentCount = sentCount;
+        bulkMessage.failedCount = failedCount;
+        await bulkMessage.save();
+        console.log(`💾 Database updated (failure) - sentCount: ${sentCount}, failedCount: ${failedCount}`);
+        
+        // Log failed message progress
+        const progress = Math.floor(((i + 1) / contactsData.length) * 100);
+        console.log(`❌ Message ${i + 1}/${contactsData.length} failed:`, {
+          contact: contactData.name,
+          phone: contactData.phoneNumber,
+          error: (error as any).message,
+          progress: `${progress}%`
+        });
       }
 
       // Update progress
       const progress = Math.floor(((i + 1) / contactsData.length) * 100);
       if (progressCallback) {
+        console.log(`📊 Calling progress callback: ${progress}%`);
         progressCallback(progress);
       }
+      
+      // Log progress for debugging
+      console.log(`📤 Message ${i + 1}/${contactsData.length} processed:`, {
+        contact: contactData.name,
+        phone: contactData.phoneNumber,
+        status: sentCount > failedCount ? 'success' : 'failed',
+        progress: `${progress}%`,
+        sentCount,
+        failedCount,
+        totalCount: contactsData.length
+      });
 
-      // Add small delay to avoid rate limiting
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Add delay to ensure frontend can catch progress updates
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
 
     // Update final status
-    bulkMessage.sentCount = sentCount;
-    bulkMessage.failedCount = failedCount;
     bulkMessage.status = failedCount === 0 ? 'completed' : 'failed';
-    
     await bulkMessage.save();
   }
 
@@ -229,9 +298,25 @@ export class BulkMessageService {
       throw new Error('Bulk message not found');
     }
 
-    const totalCount = (bulkMessage.contacts as any[]).length;
+    // Use contactsData length for accurate progress calculation
+    const totalCount = (bulkMessage.contactsData as any[]).length;
     const completedCount = bulkMessage.sentCount + bulkMessage.failedCount;
     const progress = totalCount > 0 ? Math.floor((completedCount / totalCount) * 100) : 0;
+
+    console.log('📊 Progress calculation:', {
+      bulkMessageId,
+      status: bulkMessage.status,
+      totalCount,
+      completedCount,
+      sentCount: bulkMessage.sentCount,
+      failedCount: bulkMessage.failedCount,
+      progress: `${progress}%`,
+      rawBulkMessage: {
+        sentCount: bulkMessage.sentCount,
+        failedCount: bulkMessage.failedCount,
+        status: bulkMessage.status
+      }
+    });
 
     return {
       status: bulkMessage.status,

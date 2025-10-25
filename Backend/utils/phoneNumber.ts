@@ -4,7 +4,7 @@
 
 /**
  * Normalize phone number to a consistent format
- * Removes spaces, dashes, parentheses and ensures consistent international format with + prefix
+ * Removes spaces, dashes, parentheses and adds +91 prefix for Indian numbers
  */
 export function normalizePhoneNumber(phoneNumber: string): string {
   if (!phoneNumber) {
@@ -21,7 +21,13 @@ export function normalizePhoneNumber(phoneNumber: string): string {
     normalized = normalized.replace(/\+/g, '');
   }
 
-  // Add + prefix for valid international numbers that don't have it
+  // Add +91 prefix for Indian numbers that don't have it
+  // Only add +91 if the number is 10 digits and doesn't already have a country code
+  if (!normalized.startsWith('+') && normalized.length === 10 && /^[6-9]/.test(normalized)) {
+    normalized = '+91' + normalized;
+  }
+  
+  // Add + prefix for other international numbers that don't have it
   // Only add + if the number is at least 10 digits and starts with a valid digit
   if (!normalized.startsWith('+') && normalized.length >= 10 && /^[1-9]/.test(normalized)) {
     normalized = '+' + normalized;
