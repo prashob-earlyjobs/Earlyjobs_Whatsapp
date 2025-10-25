@@ -2,7 +2,6 @@ import { Request, Response } from 'express';
 import { BulkMessageService, CreateBulkMessageData } from '../services/bulkMessageService';
 import { ContactService } from '../services/contactService';
 import { AuthRequest } from '../middleware/auth';
-import { normalizePhoneNumber } from '../utils/phoneNumber';
 
 export class BulkMessageController {
   // POST /api/bulk-messages - Create and process bulk message
@@ -35,26 +34,40 @@ export class BulkMessageController {
 
       // Process contacts data - create contacts if they don't exist
       const contactIds: string[] = [];
-      const contactResults = [];
+      const contactResults: any[] = [];
+      const successfulContactsData: any[] = [];
+      const processedPhones = new Set<string>(); // Track processed phone numbers
 
       for (const contactData of contactsData) {
         if (!contactData.phoneNumber || !contactData.name) {
-          return res.status(400).json({
-            success: false,
-            message: 'Each contact must have phoneNumber and name'
+          contactResults.push({
+            name: contactData.name || 'Unknown',
+            phoneNumber: contactData.phoneNumber || 'Unknown',
+            status: 'error',
+            error: 'Missing phoneNumber or name'
           });
+          continue;
         }
 
-        const normalizedPhone = normalizePhoneNumber(contactData.phoneNumber);
+        // Check if this phone number was already processed (using original phone number for deduplication)
+        if (processedPhones.has(contactData.phoneNumber)) {
+          contactResults.push({
+            name: contactData.name,
+            phoneNumber: contactData.phoneNumber,
+            status: 'skipped',
+            error: 'Duplicate phone number - already processed'
+          });
+          continue;
+        }
         
         try {
-          // Try to find existing contact
-          let contact = await ContactService.getContactByPhone(normalizedPhone);
+          // Try to find existing contact (ContactService will handle normalization)
+          let contact = await ContactService.getContactByPhone(contactData.phoneNumber);
           
           if (!contact) {
-            // Create new contact
+            // Create new contact (ContactService will handle normalization)
             contact = await ContactService.createContact({
-              phoneNumber: normalizedPhone,
+              phoneNumber: contactData.phoneNumber,
               name: contactData.name,
               email: contactData.email,
               tags: contactData.tags || ['bulk-message'],
@@ -62,7 +75,19 @@ export class BulkMessageController {
             });
           }
           
+          // Mark this phone number as processed
+          processedPhones.add(contactData.phoneNumber);
+          
           contactIds.push(contact._id as string);
+          successfulContactsData.push({
+            contactId: contact._id as string,
+            name: contactData.name,
+            phoneNumber: contactData.phoneNumber,
+            email: contactData.email,
+            // Include all custom variables from the original data
+            ...contactData
+          });
+          
           contactResults.push({
             id: contact._id,
             name: contact.name,
@@ -72,7 +97,7 @@ export class BulkMessageController {
         } catch (error: any) {
           contactResults.push({
             name: contactData.name,
-            phoneNumber: normalizedPhone,
+            phoneNumber: contactData.phoneNumber,
             status: 'error',
             error: error.message
           });
@@ -87,31 +112,40 @@ export class BulkMessageController {
         });
       }
 
-      // Create bulk message with original contact data including custom variables
-      const mappedContactsData = contactsData.map((contactData, index) => ({
-        contactId: contactIds[index],
-        name: contactData.name,
-        phoneNumber: contactData.phoneNumber,
-        email: contactData.email,
-        // Include all custom variables from the original data
-        ...contactData
-      }));
+      console.log('🔍 ===== BULK MESSAGE CONTROLLER DEBUG =====');
+      console.log('📊 Contact processing results:');
+      console.log('  Total CSV contacts:', contactsData.length);
+      console.log('  Successful contacts:', contactIds.length);
+      console.log('  Failed contacts:', contactsData.length - contactIds.length);
+      console.log('  Contact IDs array:', contactIds);
+      console.log('  Successful contacts data count:', successfulContactsData.length);
       
       const bulkMessageData: CreateBulkMessageData = {
         name,
         templateId,
         contacts: contactIds,
-        contactsData: mappedContactsData,
+        contactsData: successfulContactsData, // Use only successful contacts
         scheduledAt: scheduledAt ? new Date(scheduledAt) : undefined,
         createdBy: userId!
       };
+      
+      console.log('📋 Bulk message data prepared:', {
+        name: bulkMessageData.name,
+        templateId: bulkMessageData.templateId,
+        contactsCount: bulkMessageData.contacts.length,
+        contactsDataCount: bulkMessageData.contactsData.length,
+        createdBy: bulkMessageData.createdBy
+      });
+      console.log('🏁 ===== CONTROLLER DEBUG COMPLETED =====');
 
       const bulkMessage = await BulkMessageService.createBulkMessage(bulkMessageData);
 
       // Start processing immediately if not scheduled
       if (!scheduledAt) {
-        // Process in background
-        BulkMessageService.processBulkMessage(bulkMessage._id as string)
+        // Process in background with progress tracking
+        BulkMessageService.processBulkMessage(bulkMessage._id as string, (progress) => {
+          console.log(`📊 Bulk message progress: ${progress}%`);
+        })
           .catch(error => console.error('Bulk message processing error:', error));
       }
 
@@ -363,17 +397,15 @@ export class BulkMessageController {
 
         if (contactData.phoneNumber) {
           try {
-            const normalizedPhone = normalizePhoneNumber(contactData.phoneNumber);
-            result.normalizedPhoneNumber = normalizedPhone;
-            
-            // Check if contact already exists
-            const existingContact = await ContactService.getContactByPhone(normalizedPhone);
+            // Check if contact already exists (ContactService will handle normalization)
+            const existingContact = await ContactService.getContactByPhone(contactData.phoneNumber);
             if (existingContact) {
               result.existingContact = {
                 id: existingContact._id,
                 name: existingContact.name,
                 phoneNumber: existingContact.phoneNumber
               };
+              result.normalizedPhoneNumber = existingContact.phoneNumber;
             }
           } catch (error) {
             result.errors.push('Invalid phone number format');
