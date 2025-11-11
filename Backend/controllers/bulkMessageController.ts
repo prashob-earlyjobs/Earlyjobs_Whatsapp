@@ -302,6 +302,53 @@ export class BulkMessageController {
     }
   }
 
+  // GET /api/bulk-messages/:id/report - Get bulk message delivery report
+  static async getBulkMessageReport(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params;
+      const userId = req.user?.id;
+
+      if (!id) {
+        return res.status(400).json({
+          success: false,
+          message: 'Bulk message ID is required'
+        });
+      }
+
+      const bulkMessage = await BulkMessageService.getBulkMessageById(id);
+
+      if (!bulkMessage) {
+        return res.status(404).json({
+          success: false,
+          message: 'Bulk message not found'
+        });
+      }
+
+      if (req.user?.role !== 'admin' && bulkMessage.createdBy._id.toString() !== userId) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied'
+        });
+      }
+
+      const report = await BulkMessageService.getBulkMessageReport(id);
+
+      res.json({
+        success: true,
+        message: 'Bulk message report retrieved successfully',
+        data: {
+          report
+        }
+      });
+    } catch (error: any) {
+      console.error('Get bulk message report error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error while retrieving bulk message report'
+      });
+    }
+  }
+
   // PUT /api/bulk-messages/:id/cancel - Cancel bulk message
   static async cancelBulkMessage(req: AuthRequest, res: Response) {
     try {

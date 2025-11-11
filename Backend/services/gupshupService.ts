@@ -247,7 +247,7 @@ export class GupshupService {
 
       const response = await axios.get(this.baseUrl, { params });
 
-      console.log("📬 Gupshup template response:", response.data);
+      // console.log("📬 Gupshup template response:", response.data);
 
       // Handle Gateway API response format
       if (response.data.response) {

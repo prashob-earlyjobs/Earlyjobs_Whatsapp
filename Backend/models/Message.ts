@@ -15,6 +15,7 @@ export interface IMessage extends Document {
   conversationId: Types.ObjectId;
   contactId: Types.ObjectId;
   senderId?: Types.ObjectId;
+  bulkMessageId?: Types.ObjectId;
   messageId: string;
   type: 'text' | 'image' | 'document' | 'template' | 'button';
   content: IMessageContent;
@@ -41,6 +42,7 @@ const MessageSchema = new Schema<IMessage>({
   conversationId: { type: Schema.Types.ObjectId, ref: 'Conversation', required: true },
   contactId: { type: Schema.Types.ObjectId, ref: 'Contact', required: true },
   senderId: { type: Schema.Types.ObjectId, ref: 'User' },
+  bulkMessageId: { type: Schema.Types.ObjectId, ref: 'BulkMessage' },
   messageId: { type: String, required: true },
   type: { type: String, enum: ['text', 'image', 'document', 'template', 'button'], required: true },
   content: { type: MessageContentSchema, required: true },

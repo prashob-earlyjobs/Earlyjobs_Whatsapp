@@ -1,9 +1,11 @@
 import BulkMessage, { IBulkMessage } from '../models/BulkMessage';
 import Template from '../models/Template';
 import Contact from '../models/Contact';
+import Message from '../models/Message';
 import { GupshupService } from './gupshupService';
 import { ConversationService } from './conversationService';
 import { MessageService } from './messageService';
+import { DeliveryReportService } from './deliveryReportService';
 
 export interface CreateBulkMessageData {
   name: string;
@@ -18,6 +20,48 @@ export interface CreateBulkMessageData {
   }>;
   scheduledAt?: Date;
   createdBy: string;
+}
+
+export interface BulkMessageReportEntry {
+  contactId: string | null;
+  name: string;
+  phoneNumber: string;
+  email?: string;
+  messageId: string | null;
+  messageStatus: string;
+  deliveryStatus: string | null;
+  deliveryEventType: string | null;
+  deliveryCause: string | null;
+  deliveryErrorCode: string | null;
+  destinationAddress: string | null;
+  lastUpdatedAt: string | null;
+}
+
+export interface BulkMessageReportSummary {
+  totalContacts: number;
+  pending: number;
+  sent: number;
+  delivered: number;
+  read: number;
+  failed: number;
+  successRate: number;
+}
+
+export interface BulkMessageReport {
+  bulkMessage: {
+    id: string;
+    name: string;
+    status: string;
+    templateName?: string;
+    createdAt: string;
+    createdBy: {
+      id: string;
+      name: string;
+      email?: string;
+    } | null;
+  };
+  summary: BulkMessageReportSummary;
+  entries: BulkMessageReportEntry[];
 }
 
 export class BulkMessageService {
@@ -194,6 +238,7 @@ export class BulkMessageService {
           conversationId: (conversation._id as any).toString(),
           contactId: (contactData.contactId as any).toString(),
           senderId: (bulkMessage.createdBy as any).toString(),
+          bulkMessageId: (bulkMessage._id as any).toString(),
           messageId: gupshupResponse.messageId,
           type: 'template',
           content: messageContent,
@@ -221,7 +266,7 @@ export class BulkMessageService {
         bulkMessage.sentCount = sentCount;
         bulkMessage.failedCount = failedCount;
         await bulkMessage.save();
-        console.log(`💾 Database updated (success) - sentCount: ${sentCount}, failedCount: ${failedCount}`);
+        // console.log(`💾 Database updated (success) - sentCount: ${sentCount}, failedCount: ${failedCount}`);
         
       } catch (error) {
         console.error(`Failed to send message to ${contactData.phoneNumber}:`, error);
@@ -231,7 +276,7 @@ export class BulkMessageService {
         bulkMessage.sentCount = sentCount;
         bulkMessage.failedCount = failedCount;
         await bulkMessage.save();
-        console.log(`💾 Database updated (failure) - sentCount: ${sentCount}, failedCount: ${failedCount}`);
+        // console.log(`💾 Database updated (failure) - sentCount: ${sentCount}, failedCount: ${failedCount}`);
         
         // Log failed message progress
         const progress = Math.floor(((i + 1) / contactsData.length) * 100);
@@ -324,6 +369,150 @@ export class BulkMessageService {
       failedCount: bulkMessage.failedCount,
       totalCount,
       progress,
+    };
+  }
+
+  static async getBulkMessageReport(bulkMessageId: string): Promise<BulkMessageReport> {
+    const bulkMessage = await BulkMessage.findById(bulkMessageId)
+      .populate('templateId', 'name')
+      .populate('createdBy', 'name email')
+      .populate('contacts', 'name phoneNumber email');
+
+    if (!bulkMessage) {
+      throw new Error('Bulk message not found');
+    }
+
+    const bulkMessageObjectId = bulkMessage._id as any;
+    const bulkMessageIdString =
+      bulkMessageObjectId?.toString?.() ?? String(bulkMessageObjectId);
+
+    const contactsData = (bulkMessage.contactsData as any[]) || [];
+    const contactDocs = (bulkMessage.contacts as any[]) || [];
+
+    const contactDocMap = new Map<string, any>();
+    contactDocs.forEach(contact => {
+      const id = contact._id?.toString();
+      if (id) {
+        contactDocMap.set(id, contact);
+      }
+    });
+
+    const messages = await Message.find({ bulkMessageId: bulkMessageObjectId })
+      .populate('contactId', 'name phoneNumber email')
+      .select('contactId messageId status timestamp bulkMessageId');
+
+    const messageByContactId = new Map<string, typeof messages[number]>();
+    const messageIds: string[] = [];
+
+    messages.forEach(message => {
+      const rawContactId = (message.contactId as any)?._id ?? message.contactId;
+      const contactId = rawContactId ? rawContactId.toString() : null;
+      if (contactId) {
+        if (!messageByContactId.has(contactId)) {
+          messageByContactId.set(contactId, message);
+        }
+      }
+      if (message.messageId) {
+        messageIds.push(message.messageId);
+      }
+    });
+
+    const latestReportsMap = await DeliveryReportService.getLatestDeliveryReportsForMessages(messageIds);
+
+    const summary: BulkMessageReportSummary = {
+      totalContacts: contactsData.length,
+      pending: 0,
+      sent: 0,
+      delivered: 0,
+      read: 0,
+      failed: 0,
+      successRate: 0,
+    };
+
+    const normalizeStatus = (status: string | null | undefined): string | null => {
+      if (!status) return null;
+      return status.toLowerCase();
+    };
+
+    const incrementSummary = (status: string | null) => {
+      const normalized = normalizeStatus(status);
+      switch (normalized) {
+        case 'sent':
+          summary.sent += 1;
+          break;
+        case 'delivered':
+          summary.delivered += 1;
+          break;
+        case 'read':
+          summary.read += 1;
+          break;
+        case 'failed':
+          summary.failed += 1;
+          break;
+        default:
+          summary.pending += 1;
+          break;
+      }
+    };
+
+    const entries: BulkMessageReportEntry[] = contactsData.map(contactData => {
+      const contactId = contactData.contactId ? contactData.contactId.toString() : null;
+      const contactDoc = contactId ? contactDocMap.get(contactId) : null;
+      const message = contactId ? messageByContactId.get(contactId) : undefined;
+
+      const latestReport = message?.messageId
+        ? latestReportsMap[message.messageId] ?? null
+        : null;
+
+      const deliveryStatus = latestReport?.internalStatus ?? null;
+      const messageStatus = message?.status ?? (deliveryStatus ? deliveryStatus : 'pending');
+
+      incrementSummary(deliveryStatus || messageStatus);
+
+      return {
+        contactId,
+        name: contactDoc?.name ?? contactData.name,
+        phoneNumber: contactDoc?.phoneNumber ?? contactData.phoneNumber,
+        email: contactDoc?.email ?? contactData.email,
+        messageId: message?.messageId ?? null,
+        messageStatus,
+        deliveryStatus,
+        deliveryEventType: latestReport?.eventType ?? null,
+        deliveryCause: latestReport?.cause ?? null,
+        deliveryErrorCode: latestReport?.errorCode ?? null,
+        destinationAddress: latestReport?.destAddr ?? null,
+        lastUpdatedAt: latestReport?.eventTs
+          ? latestReport.eventTs.toISOString()
+          : message?.timestamp
+            ? message.timestamp.toISOString()
+            : null,
+      };
+    });
+
+    if (summary.totalContacts > 0) {
+      summary.successRate = ((summary.delivered + summary.read) / summary.totalContacts) * 100;
+    }
+
+    const createdBy = bulkMessage.createdBy as any;
+    const template = bulkMessage.templateId as any;
+
+    return {
+      bulkMessage: {
+        id: bulkMessageIdString,
+        name: bulkMessage.name,
+        status: bulkMessage.status,
+        templateName: template?.name,
+        createdAt: bulkMessage.createdAt ? bulkMessage.createdAt.toISOString() : new Date().toISOString(),
+        createdBy: createdBy
+          ? {
+              id: createdBy._id?.toString() ?? '',
+              name: createdBy.name,
+              email: createdBy.email,
+            }
+          : null,
+      },
+      summary,
+      entries,
     };
   }
 } 

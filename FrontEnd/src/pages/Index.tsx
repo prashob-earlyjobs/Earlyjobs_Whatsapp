@@ -83,7 +83,21 @@ const Index = () => {
           />
         );
       case "bulk":
-        return <BulkMessaging onBulkMessageComplete={() => setRefreshTrigger(prev => prev + 1)} />;
+        return (
+          <BulkMessaging
+            key="bulk-create"
+            mode="create"
+            onBulkMessageComplete={() => setRefreshTrigger(prev => prev + 1)}
+          />
+        );
+      case "bulk-history":
+        return (
+          <BulkMessaging
+            key="bulk-history"
+            mode="history"
+            onBulkMessageComplete={() => setRefreshTrigger(prev => prev + 1)}
+          />
+        );
       case "templates":
         return <TemplateManager />;
       case "analytics":

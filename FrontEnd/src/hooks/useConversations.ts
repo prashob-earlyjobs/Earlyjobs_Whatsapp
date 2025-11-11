@@ -1,19 +1,21 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { conversationApi, Conversation, Message } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 
-interface UseConversationsState {
+interface UseConversationsReturn {
   conversations: Conversation[];
   loading: boolean;
+  loadingMore: boolean;
   error: string | null;
   count: number;
-}
-
-interface UseConversationsReturn extends UseConversationsState {
+  hasMore: boolean;
   refreshConversations: () => Promise<void>;
+  loadMoreConversations: () => Promise<void>;
   updateConversationStatus: (id: string, status: 'open' | 'closed' | 'pending') => Promise<void>;
   markAsRead: (id: string) => Promise<void>;
 }
+
+const CONVERSATION_PAGE_SIZE = 30;
 
 // Helper function to handle auth errors
 const handleAuthError = (error: any, logout: () => Promise<void>) => {
@@ -26,59 +28,126 @@ const handleAuthError = (error: any, logout: () => Promise<void>) => {
 
 export const useConversations = (): UseConversationsReturn => {
   const { logout, isAuthenticated, isLoading: authLoading } = useAuth();
-  const [state, setState] = useState<UseConversationsState>({
-    conversations: [],
-    loading: true,
-    error: null,
-    count: 0,
-  });
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [count, setCount] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
 
-  const fetchConversations = useCallback(async () => {
+  const offsetRef = useRef(0);
+  const hasMoreRef = useRef(true);
+  const loadingRef = useRef(false);
+  const loadingMoreRef = useRef(false);
+
+  const limit = CONVERSATION_PAGE_SIZE;
+
+  const fetchConversations = useCallback(async ({ reset = false }: { reset?: boolean } = {}) => {
     // Wait for auth to complete before making API calls
     if (authLoading) {
       return;
     }
 
     if (!isAuthenticated) {
-      setState({
-        conversations: [],
-        loading: false,
-        error: null,
-        count: 0,
-      });
+      setConversations([]);
+      setLoading(false);
+      setLoadingMore(false);
+      setError(null);
+      setCount(0);
+      setHasMore(false);
+      offsetRef.current = 0;
+      hasMoreRef.current = false;
+      loadingRef.current = false;
+      loadingMoreRef.current = false;
       return;
     }
 
-    setState(prev => ({ ...prev, loading: true, error: null }));
-    
+    if (reset) {
+      loadingRef.current = true;
+      loadingMoreRef.current = false;
+      hasMoreRef.current = true;
+      offsetRef.current = 0;
+
+      setLoading(true);
+      setLoadingMore(false);
+      setError(null);
+      setHasMore(true);
+    } else {
+      if (loadingRef.current || loadingMoreRef.current || !hasMoreRef.current) {
+        return;
+      }
+
+      loadingMoreRef.current = true;
+      setLoadingMore(true);
+      setError(null);
+    }
+
     try {
-      const response = await conversationApi.getConversations();
-      
-      setState({
-        conversations: response.data.conversations,
-        loading: false,
-        error: null,
-        count: response.data.count,
+      const currentOffset = reset ? 0 : offsetRef.current;
+
+      const response = await conversationApi.getConversations(undefined, {
+        limit,
+        offset: currentOffset,
       });
+
+      const data = response.data;
+      const newConversations = data.conversations ?? [];
+      const totalCount = data.count ?? 0;
+
+      const nextOffset = currentOffset + newConversations.length;
+      const responseHasMore = data.pagination?.hasMore;
+      const computedHasMore =
+        typeof responseHasMore === 'boolean'
+          ? responseHasMore
+          : newConversations.length > 0 && nextOffset < totalCount;
+
+      if (reset) {
+        setConversations(newConversations);
+      } else {
+        setConversations(prev => {
+          const existingIds = new Set(prev.map(conv => conv._id));
+          const deduped = newConversations.filter(conv => !existingIds.has(conv._id));
+          return [...prev, ...deduped];
+        });
+      }
+
+      setCount(totalCount);
+      setHasMore(computedHasMore);
+      offsetRef.current = nextOffset;
+      hasMoreRef.current = computedHasMore;
+      setError(null);
     } catch (error: any) {
       // Handle auth errors
       const wasAuthError = handleAuthError(error, logout);
       
       if (!wasAuthError) {
-        setState(prev => ({
-          ...prev,
-          loading: false,
-          error: error.message || 'Failed to fetch conversations',
-        }));
+        setError(error.message || 'Failed to fetch conversations');
+      }
+
+      if (reset) {
+        setConversations([]);
+        setCount(0);
+        setHasMore(false);
+        offsetRef.current = 0;
+        hasMoreRef.current = false;
+      }
+    } finally {
+      if (reset) {
+        loadingRef.current = false;
+        setLoading(false);
       } else {
-        // For auth errors, don't show error state, just let logout handle it
-        setState(prev => ({ ...prev, loading: false }));
+        loadingMoreRef.current = false;
+        setLoadingMore(false);
       }
     }
-  }, [isAuthenticated, authLoading, logout]);
+  }, [authLoading, isAuthenticated, limit, logout]);
 
   const refreshConversations = useCallback(async () => {
-    await fetchConversations();
+    await fetchConversations({ reset: true });
+  }, [fetchConversations]);
+
+  const loadMoreConversations = useCallback(async () => {
+    await fetchConversations({ reset: false });
   }, [fetchConversations]);
 
   const updateConversationStatus = useCallback(async (
@@ -89,12 +158,9 @@ export const useConversations = (): UseConversationsReturn => {
       await conversationApi.updateConversationStatus(id, status);
       
       // Update local state
-      setState(prev => ({
-        ...prev,
-        conversations: prev.conversations.map(conv =>
-          conv._id === id ? { ...conv, status } : conv
-        ),
-      }));
+      setConversations(prev => prev.map(conv =>
+        conv._id === id ? { ...conv, status } : conv
+      ));
     } catch (error: any) {
       // Handle auth errors
       const wasAuthError = handleAuthError(error, logout);
@@ -109,12 +175,9 @@ export const useConversations = (): UseConversationsReturn => {
       await conversationApi.markAsRead(id);
       
       // Update local state
-      setState(prev => ({
-        ...prev,
-        conversations: prev.conversations.map(conv =>
-          conv._id === id ? { ...conv, unreadCount: 0 } : conv
-        ),
-      }));
+      setConversations(prev => prev.map(conv =>
+        conv._id === id ? { ...conv, unreadCount: 0 } : conv
+      ));
     } catch (error: any) {
       // Handle auth errors
       const wasAuthError = handleAuthError(error, logout);
@@ -124,21 +187,21 @@ export const useConversations = (): UseConversationsReturn => {
     }
   }, [logout]);
 
-  // Fetch conversations when auth completes or when explicitly refreshed
-  useEffect(() => {
-    fetchConversations();
-  }, [fetchConversations]);
-
-  // Also fetch when component mounts (handles page refresh)
   useEffect(() => {
     if (!authLoading) {
-      fetchConversations();
+      fetchConversations({ reset: true });
     }
-  }, []); // Only run on mount
+  }, [authLoading, fetchConversations]);
 
   return {
-    ...state,
+    conversations,
+    loading,
+    loadingMore,
+    error,
+    count,
+    hasMore,
     refreshConversations,
+    loadMoreConversations,
     updateConversationStatus,
     markAsRead,
   };

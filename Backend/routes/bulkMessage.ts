@@ -19,6 +19,9 @@ router.get('/:id', authenticateToken, BulkMessageController.getBulkMessageById);
 // GET /api/bulk-messages/:id/status - Get bulk message status
 router.get('/:id/status', authenticateToken, BulkMessageController.getBulkMessageStatus);
 
+// GET /api/bulk-messages/:id/report - Get bulk message delivery report
+router.get('/:id/report', authenticateToken, BulkMessageController.getBulkMessageReport);
+
 // PUT /api/bulk-messages/:id/cancel - Cancel bulk message
 router.put('/:id/cancel', authenticateToken, BulkMessageController.cancelBulkMessage);
 

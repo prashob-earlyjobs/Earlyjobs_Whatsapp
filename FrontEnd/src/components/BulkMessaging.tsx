@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Upload, FileText, Send, Download, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
@@ -9,8 +9,16 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from '@/components/ui/pagination';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { templateApi, bulkMessageApi, LocalTemplate, ContactData } from '@/lib/api';
+import { templateApi, bulkMessageApi, LocalTemplate, ContactData, BulkMessage } from '@/lib/api';
 import { parseCSV, downloadCSVTemplate, normalizeContactData } from '@/utils/csvParser';
 import { toast } from 'sonner';
 
@@ -25,9 +33,10 @@ interface ProcessedContact {
 
 interface BulkMessagingProps {
   onBulkMessageComplete?: () => void;
+  mode?: 'create' | 'history';
 }
 
-export const BulkMessaging = ({ onBulkMessageComplete }: BulkMessagingProps) => {
+export const BulkMessaging = ({ onBulkMessageComplete, mode = 'create' }: BulkMessagingProps) => {
   const [step, setStep] = useState(1);
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<LocalTemplate | null>(null);
@@ -38,11 +47,28 @@ export const BulkMessaging = ({ onBulkMessageComplete }: BulkMessagingProps) => 
   const [sendingProgress, setSendingProgress] = useState(0);
   const [bulkMessageId, setBulkMessageId] = useState<string | null>(null);
   const [actualMessageCount, setActualMessageCount] = useState(0); // Track actual message count from backend
+  const [selectedHistoryMessage, setSelectedHistoryMessage] = useState<BulkMessage | null>(null);
+  const pollIntervalRef = useRef<number | null>(null);
+  const pollTimeoutRef = useRef<number | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [reportPage, setReportPage] = useState(1);
+  const itemsPerPage = 10;
+  const reportItemsPerPage = 50;
 
   // Fetch templates
   const { data: templatesData, isLoading: isLoadingTemplates } = useQuery({
     queryKey: ['localTemplates'],
     queryFn: () => templateApi.getLocalTemplates(),
+  });
+
+  const {
+    data: bulkMessagesData,
+    isLoading: isLoadingBulkMessages,
+    isFetching: isFetchingBulkMessages,
+    refetch: refetchBulkMessages,
+  } = useQuery({
+    queryKey: ['bulkMessages'],
+    queryFn: () => bulkMessageApi.getAllBulkMessages(),
   });
 
   // Validate contacts mutation
@@ -78,8 +104,10 @@ export const BulkMessaging = ({ onBulkMessageComplete }: BulkMessagingProps) => 
     onSuccess: (response) => {
       if (response.success) {
         setBulkMessageId(response.data.bulkMessage._id);
+        setSelectedHistoryMessage(response.data.bulkMessage);
         setStep(4);
         toast.success('Bulk message started successfully!');
+        refetchBulkMessages();
         // Trigger refresh of conversation list to show new conversations
         if (onBulkMessageComplete) {
           onBulkMessageComplete();
@@ -94,10 +122,31 @@ export const BulkMessaging = ({ onBulkMessageComplete }: BulkMessagingProps) => 
     },
   });
 
+  const {
+    data: reportResponse,
+    isLoading: isLoadingReport,
+    isFetching: isFetchingReport,
+    refetch: refetchReport,
+  } = useQuery({
+    queryKey: ['bulkMessageReport', bulkMessageId],
+    queryFn: () => bulkMessageApi.getBulkMessageReport(bulkMessageId!),
+    enabled: !!bulkMessageId,
+    refetchInterval: () => {
+      if (!bulkMessageId) {
+        return false;
+      }
+      return sendingProgress < 100 ? 5000 : false;
+    },
+  });
+
+  const reportData = reportResponse?.data.report;
+
   // Poll for progress
-  const pollProgress = async (id: string) => {
+  const pollProgress = (id: string) => {
     console.log('🔄 Starting progress polling for bulk message:', id);
-    const pollInterval = setInterval(async () => {
+    clearPolling();
+
+    const intervalId = window.setInterval(async () => {
       try {
         console.log('📡 Polling for progress...');
         const response = await bulkMessageApi.getBulkMessageStatus(id);
@@ -117,7 +166,8 @@ export const BulkMessaging = ({ onBulkMessageComplete }: BulkMessagingProps) => 
           
           if (response.data.status === 'completed' || response.data.status === 'failed') {
             console.log('🏁 Bulk message finished with status:', response.data.status);
-            clearInterval(pollInterval);
+            clearPolling();
+            refetchReport();
             if (response.data.status === 'completed') {
               toast.success('All messages sent successfully!');
               // Trigger refresh of conversation list to show new messages
@@ -133,12 +183,54 @@ export const BulkMessaging = ({ onBulkMessageComplete }: BulkMessagingProps) => 
         }
       } catch (error) {
         console.error('❌ Polling error:', error);
-        clearInterval(pollInterval);
+        clearPolling();
       }
     }, 2000);
 
-    // Stop polling after 5 minutes
-    setTimeout(() => clearInterval(pollInterval), 300000);
+    pollIntervalRef.current = intervalId;
+    pollTimeoutRef.current = window.setTimeout(() => {
+      console.log('⏱️ Polling timeout reached. Stopping progress polling.');
+      clearPolling();
+    }, 300000);
+  };
+
+  const handleViewBulkMessageReport = async (bulkMessage: BulkMessage) => {
+    try {
+      clearPolling();
+      setStep(4); // Always go to step 4 for report view
+      const messageIndex = bulkMessagesData?.data?.bulkMessages.findIndex(msg => msg._id === bulkMessage._id);
+      if (messageIndex >= 0) {
+        setCurrentPage(Math.floor(messageIndex / itemsPerPage) + 1);
+      }
+      setSelectedHistoryMessage(bulkMessage);
+      setBulkMessageName(bulkMessage.name);
+      setBulkMessageId(bulkMessage._id);
+      setActualMessageCount(bulkMessage.contacts?.length ?? 0);
+      setStep(4);
+
+      const statusResponse = await bulkMessageApi.getBulkMessageStatus(bulkMessage._id);
+      if (statusResponse.success) {
+        setSendingProgress(statusResponse.data.progress);
+        setActualMessageCount(statusResponse.data.totalCount);
+
+        if (['pending', 'processing'].includes(statusResponse.data.status)) {
+          pollProgress(bulkMessage._id);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load bulk message status:', error);
+    }
+  };
+
+  const handleBackFromReport = () => {
+    clearPolling();
+    if (mode === 'history') {
+      setSelectedHistoryMessage(null);
+      setBulkMessageId(null);
+      setReportPage(1);
+    } else {
+      setStep(3);
+    }
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -315,6 +407,7 @@ export const BulkMessaging = ({ onBulkMessageComplete }: BulkMessagingProps) => 
   };
 
   const resetWizard = () => {
+    clearPolling();
     setStep(1);
     setCsvFile(null);
     setSelectedTemplate(null);
@@ -325,17 +418,605 @@ export const BulkMessaging = ({ onBulkMessageComplete }: BulkMessagingProps) => 
     setSendingProgress(0);
     setBulkMessageId(null);
     setActualMessageCount(0); // Reset actual message count
+    setSelectedHistoryMessage(null);
   };
 
   const localTemplates = templatesData?.data?.templates || [];
   const validContacts = processedContacts.filter(c => c.isValid);
   const invalidContacts = processedContacts.filter(c => !c.isValid);
+  const reportEntries = reportData?.entries ?? [];
+  const reportSummary = reportData?.summary;
+  const bulkMessages = bulkMessagesData?.data?.bulkMessages ?? [];
+  const totalMessagesForProgress =
+    actualMessageCount || reportSummary?.totalContacts || validContacts.length;
+  const progressCompletedCount = totalMessagesForProgress
+    ? Math.floor((sendingProgress / 100) * totalMessagesForProgress)
+    : 0;
+  const totalPages =
+    bulkMessages.length > 0 ? Math.ceil(bulkMessages.length / itemsPerPage) : 1;
+  const clampedPage = Math.min(Math.max(currentPage, 1), totalPages);
+  const paginatedMessages = bulkMessages.slice(
+    (clampedPage - 1) * itemsPerPage,
+    clampedPage * itemsPerPage
+  );
+
+  const renderReportCard = ({ showActions = true }: { showActions?: boolean } = {}) => {
+    if (!bulkMessageId) {
+      return null;
+    }
+
+    const debugValidCount =
+      validContacts.length ||
+      selectedHistoryMessage?.contacts?.length ||
+      reportSummary?.totalContacts ||
+      0;
+
+    const getHeading = () => {
+      if (sendingProgress < 100) {
+        return 'Sending Messages...';
+      }
+      if (selectedHistoryMessage) {
+        return `Delivery Report: ${selectedHistoryMessage.name}`;
+      }
+      return 'Messages Sent Successfully!';
+    };
+
+    const totalReportEntries = reportEntries.length;
+    const totalReportPages =
+      totalReportEntries > 0 ? Math.ceil(totalReportEntries / reportItemsPerPage) : 1;
+    const currentReportPage = Math.min(Math.max(reportPage, 1), Math.max(totalReportPages, 1));
+    const reportStartIndex =
+      totalReportEntries === 0 ? 0 : (currentReportPage - 1) * reportItemsPerPage;
+    const reportEndIndex =
+      totalReportEntries === 0
+        ? 0
+        : Math.min(reportStartIndex + reportItemsPerPage, totalReportEntries);
+    const paginatedReportEntries =
+      totalReportEntries === 0 ? [] : reportEntries.slice(reportStartIndex, reportEndIndex);
+
+    const showBackButton = mode === 'history' && !!selectedHistoryMessage;
+
+    return (
+      <Card className="p-6">
+        <div className="flex items-center justify-between gap-4 mb-4">
+          <h3 className="text-lg font-semibold">{getHeading()}</h3>
+          {showBackButton && (
+            <Button variant="ghost" size="sm" onClick={handleBackFromReport}>
+              ← Back
+            </Button>
+          )}
+        </div>
+        <div className="space-y-4">
+          {/* <div className="p-2 bg-gray-100 rounded text-xs">
+            <strong>Debug Info:</strong> Progress: {sendingProgress}%,{' '}
+            Actual Count: {actualMessageCount}, Valid Contacts: {debugValidCount},{' '}
+            Bulk Message ID: {bulkMessageId}
+          </div> */}
+
+          {/* <Button
+            variant="outline"
+            size="sm"
+            className="mt-2"
+            onClick={async () => {
+              if (!bulkMessageId) return;
+              console.log('🧪 Manual test - calling API...');
+              try {
+                const response = await bulkMessageApi.getBulkMessageStatus(bulkMessageId);
+                console.log('🧪 Manual test response:', response);
+              } catch (error) {
+                console.error('🧪 Manual test error:', error);
+              }
+            }}
+            disabled={!bulkMessageId}
+          >
+            Test API Call
+          </Button> */}
+
+          <Progress value={sendingProgress} className="w-full" />
+          <p className="text-sm text-muted-foreground text-center">
+            {totalMessagesForProgress
+              ? sendingProgress < 100
+                ? `Sending ${progressCompletedCount} of ${totalMessagesForProgress} messages...`
+                : `All ${totalMessagesForProgress} messages sent successfully!`
+              : sendingProgress < 100
+                ? 'Preparing messages...'
+                : 'Messages processed.'}
+          </p>
+
+          <div className="pt-4 border-t border-border">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h4 className="text-sm font-semibold text-foreground">Delivery Report</h4>
+                <p className="text-xs text-muted-foreground">
+                  Latest delivery status for each recipient
+                </p>
+              </div>
+              {(isFetchingReport || (isLoadingReport && !reportData)) && (
+                <div className="flex items-center text-xs text-muted-foreground">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin mr-2" />
+                  Updating
+                </div>
+              )}
+            </div>
+
+            {!reportData && isLoadingReport ? (
+              <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+                <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                Loading report data...
+              </div>
+            ) : reportData ? (
+              <>
+                {reportSummary && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
+                    <div className="rounded-lg border border-border/60 bg-muted/40 p-4">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                        Total Contacts
+                      </p>
+                      <p className="text-2xl font-semibold text-foreground">
+                        {reportSummary.totalContacts}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-border/60 bg-muted/40 p-4">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                        Sent
+                      </p>
+                      <p className="text-2xl font-semibold text-foreground">
+                        {reportSummary.sent}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-border/60 bg-muted/40 p-4">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                        Delivered
+                      </p>
+                      <p className="text-2xl font-semibold text-foreground">
+                        {reportSummary.delivered}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-border/60 bg-muted/40 p-4">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                        Read
+                      </p>
+                      <p className="text-2xl font-semibold text-foreground">
+                        {reportSummary.read}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-border/60 bg-muted/40 p-4">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                        Failed
+                      </p>
+                      <p className="text-2xl font-semibold text-destructive">
+                        {reportSummary.failed}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="overflow-x-auto">
+                  <div className="flex items-center justify-between mb-3 text-xs text-muted-foreground">
+                    <span>
+                      Showing{' '}
+                      {totalReportEntries === 0
+                        ? '0'
+                        : `${reportStartIndex + 1}-${reportEndIndex}`} of {totalReportEntries}{' '}
+                      contacts
+                    </span>
+                  </div>
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs uppercase text-muted-foreground">
+                        <th className="py-2 pr-4 font-medium">Contact</th>
+                        <th className="py-2 pr-4 font-medium">Phone</th>
+                        <th className="py-2 pr-4 font-medium">Message Status</th>
+                        <th className="py-2 pr-4 font-medium">Delivery Status</th>
+                        <th className="py-2 pr-4 font-medium">Cause / Error</th>
+                        <th className="py-2 font-medium">Last Update</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paginatedReportEntries.length === 0 && (
+                        <tr>
+                          <td
+                            colSpan={6}
+                            className="py-4 text-center text-sm text-muted-foreground"
+                          >
+                            No delivery data available yet.
+                          </td>
+                        </tr>
+                      )}
+                      {paginatedReportEntries.map((entry, index) => (
+                        <tr
+                          key={`${entry.contactId ?? entry.phoneNumber ?? index}-${reportStartIndex + index}`}
+                          className="border-t border-border/60"
+                        >
+                          <td className="py-2 pr-4 font-medium text-foreground">
+                            {entry.name || 'Unknown'}
+                            {entry.email && (
+                              <div className="text-xs text-muted-foreground">{entry.email}</div>
+                            )}
+                          </td>
+                          <td className="py-2 pr-4 text-muted-foreground">
+                            {entry.phoneNumber || entry.destinationAddress || '—'}
+                          </td>
+                          <td className="py-2 pr-4">
+                            {renderStatusBadge(entry.messageStatus, 'Pending')}
+                          </td>
+                          <td className="py-2 pr-4">
+                            {renderStatusBadge(entry.deliveryStatus, 'Pending')}
+                          </td>
+                          <td className="py-2 pr-4 text-muted-foreground">
+                            {entry.deliveryCause || entry.deliveryEventType || '—'}
+                            {entry.deliveryErrorCode && (
+                              <div className="text-[10px] uppercase tracking-wide">
+                                Code: {entry.deliveryErrorCode}
+                              </div>
+                            )}
+                          </td>
+                          <td className="py-2 text-muted-foreground">
+                            {formatDateTime(entry.lastUpdatedAt)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {totalReportPages > 1 && (
+                    <Pagination className="mt-4">
+                      <PaginationContent>
+                        <PaginationItem>
+                          <PaginationPrevious
+                            href="#"
+                            onClick={(event) => {
+                              event.preventDefault();
+                              if (currentReportPage > 1) {
+                                setReportPage(currentReportPage - 1);
+                              }
+                            }}
+                            className={
+                              currentReportPage === 1 ? 'pointer-events-none opacity-50' : ''
+                            }
+                          />
+                        </PaginationItem>
+                        {Array.from({ length: totalReportPages }).map((_, index) => {
+                          const page = index + 1;
+                          return (
+                            <PaginationItem key={`report-page-${page}`}>
+                              <PaginationLink
+                                href="#"
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  setReportPage(page);
+                                }}
+                                isActive={page === currentReportPage}
+                              >
+                                {page}
+                              </PaginationLink>
+                            </PaginationItem>
+                          );
+                        })}
+                        <PaginationItem>
+                          <PaginationNext
+                            href="#"
+                            onClick={(event) => {
+                              event.preventDefault();
+                              if (currentReportPage < totalReportPages) {
+                                setReportPage(currentReportPage + 1);
+                              }
+                            }}
+                            className={
+                              currentReportPage === totalReportPages
+                                ? 'pointer-events-none opacity-50'
+                                : ''
+                            }
+                          />
+                        </PaginationItem>
+                      </PaginationContent>
+                    </Pagination>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="text-sm text-muted-foreground">
+                Report data is not available yet. Please check back shortly.
+              </div>
+            )}
+          </div>
+
+          {showActions && sendingProgress >= 100 && (
+            <div className="flex justify-center space-x-2">
+              <Button onClick={resetWizard}>Send Another Batch</Button>
+              <Button variant="outline" onClick={() => setStep(1)}>
+                Back to Dashboard
+              </Button>
+            </div>
+          )}
+        </div>
+      </Card>
+    );
+  };
+
+  const clearPolling = () => {
+    if (pollIntervalRef.current !== null) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+    if (pollTimeoutRef.current !== null) {
+      clearTimeout(pollTimeoutRef.current);
+      pollTimeoutRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      clearPolling();
+    };
+  }, []);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [bulkMessages.length]);
+
+  useEffect(() => {
+    setReportPage(1);
+  }, [bulkMessageId]);
+
+  useEffect(() => {
+    if (mode === 'create') {
+      setStep(1);
+    }
+  }, [mode]);
+
+  useEffect(() => {
+    const totalPagesForReport =
+      reportEntries.length > 0 ? Math.ceil(reportEntries.length / reportItemsPerPage) : 1;
+    if (reportPage > totalPagesForReport) {
+      setReportPage(totalPagesForReport);
+    }
+  }, [reportEntries.length, reportItemsPerPage, reportPage]);
+
+  const renderStatusBadge = (status: string | null, fallback: string = 'Pending') => {
+    const normalized = status?.toLowerCase();
+    let variant: 'default' | 'secondary' | 'destructive' | 'outline' = 'outline';
+    let label = (status ?? fallback).toUpperCase();
+
+    switch (normalized) {
+      case 'sent':
+        variant = 'default';
+        label = 'SENT';
+        break;
+      case 'delivered':
+        variant = 'default';
+        label = 'DELIVERED';
+        break;
+      case 'read':
+        variant = 'secondary';
+        label = 'READ';
+        break;
+      case 'failed':
+        variant = 'destructive';
+        label = 'FAILED';
+        break;
+      default:
+        variant = 'outline';
+        label = fallback.toUpperCase();
+        break;
+    }
+
+    return (
+      <Badge variant={variant} className="text-xs">
+        {label}
+      </Badge>
+    );
+  };
+
+  const formatDateTime = (value: string | null) => {
+    if (!value) return '—';
+    try {
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) {
+        return '—';
+      }
+      return date.toLocaleString();
+    } catch (error) {
+      return '—';
+    }
+  };
+
+  const renderBulkMessageStatusBadge = (status: BulkMessage['status']) => {
+    switch (status) {
+      case 'completed':
+        return <Badge variant="default" className="text-xs">COMPLETED</Badge>;
+      case 'processing':
+        return <Badge variant="secondary" className="text-xs">PROCESSING</Badge>;
+      case 'failed':
+        return <Badge variant="destructive" className="text-xs">FAILED</Badge>;
+      default:
+        return <Badge variant="outline" className="text-xs">PENDING</Badge>;
+    }
+  };
+
+  if (mode === 'history') {
+  return (
+    <div className="h-full p-6 overflow-y-auto">
+        <div className="max-w-5xl mx-auto space-y-6">
+          <div className="flex flex-col gap-2">
+            <h2 className="text-2xl font-bold text-foreground">Bulk Message History</h2>
+            <p className="text-muted-foreground">
+              Review previously sent campaigns and open their delivery reports anytime.
+            </p>
+          </div>
+
+          {renderReportCard({ showActions: false })}
+
+          <Card className="p-6">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
+              <div>
+                <h3 className="text-lg font-semibold">Campaigns</h3>
+                <p className="text-sm text-muted-foreground">
+                  {bulkMessages.length} total campaign{bulkMessages.length === 1 ? '' : 's'}
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                {isFetchingBulkMessages && (
+                  <div className="flex items-center text-xs text-muted-foreground">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin mr-2" />
+                    Updating
+                  </div>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => refetchBulkMessages()}
+                  disabled={isFetchingBulkMessages}
+                >
+                  Refresh
+                </Button>
+              </div>
+            </div>
+
+            {isLoadingBulkMessages ? (
+              <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+                <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                Loading bulk message history...
+              </div>
+            ) : bulkMessages.length === 0 ? (
+              <div className="py-8 text-center text-sm text-muted-foreground">
+                No bulk messages found. Create your first campaign to see it listed here.
+              </div>
+            ) : (
+              <>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs uppercase text-muted-foreground">
+                        <th className="py-2 pr-4 font-medium">Campaign</th>
+                        <th className="py-2 pr-4 font-medium">Created</th>
+                        <th className="py-2 pr-4 font-medium">Status</th>
+                        <th className="py-2 pr-4 font-medium">Messages</th>
+                        <th className="py-2 pr-4 font-medium">Template</th>
+                        <th className="py-2 font-medium"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paginatedMessages.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="py-6 text-center text-sm text-muted-foreground">
+                            No campaigns on this page.
+                          </td>
+                        </tr>
+                      ) : (
+                        paginatedMessages.map((message) => {
+                          const total = message.sentCount + message.failedCount;
+                          const templateName = message.templateId?.name ?? '';
+                          const isSelected = selectedHistoryMessage?._id === message._id;
+
+                          return (
+                            <tr
+                              key={message._id}
+                              className={`border-t border-border/60 ${
+                                isSelected ? 'bg-accent/40' : ''
+                              }`}
+                            >
+                              <td className="py-3 pr-4 font-medium text-foreground">
+                                {message.name}
+                              </td>
+                              <td className="py-3 pr-4 text-muted-foreground">
+                                {formatDateTime(message.createdAt)}
+                              </td>
+                              <td className="py-3 pr-4">
+                                {renderBulkMessageStatusBadge(message.status)}
+                              </td>
+                              <td className="py-3 pr-4 text-muted-foreground">
+                                {message.sentCount} sent
+                                {message.failedCount > 0 && (
+                                  <span className="ml-2 text-destructive">
+                                    {message.failedCount} failed
+                                  </span>
+                                )}
+                                {total === 0 && message.contacts?.length
+                                  ? ` of ${message.contacts.length}`
+                                  : ''}
+                              </td>
+                              <td className="py-3 pr-4 text-muted-foreground">
+                                {templateName || '—'}
+                              </td>
+                              <td className="py-3 text-right">
+                                <Button
+                                  variant={isSelected ? 'default' : 'outline'}
+                                  size="sm"
+                                  onClick={() => handleViewBulkMessageReport(message)}
+                                >
+                                  View Report
+                                </Button>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {totalPages > 1 && (
+                  <Pagination className="mt-6">
+                    <PaginationContent>
+                      <PaginationItem>
+                        <PaginationPrevious
+                          href="#"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            if (clampedPage > 1) {
+                              setCurrentPage(clampedPage - 1);
+                            }
+                          }}
+                          className={clampedPage === 1 ? 'pointer-events-none opacity-50' : ''}
+                        />
+                      </PaginationItem>
+                      {Array.from({ length: totalPages }).map((_, index) => {
+                        const page = index + 1;
+                        return (
+                          <PaginationItem key={page}>
+                            <PaginationLink
+                              href="#"
+                              onClick={(event) => {
+                                event.preventDefault();
+                                setCurrentPage(page);
+                              }}
+                              isActive={page === clampedPage}
+                            >
+                              {page}
+                            </PaginationLink>
+                          </PaginationItem>
+                        );
+                      })}
+                      <PaginationItem>
+                        <PaginationNext
+                          href="#"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            if (clampedPage < totalPages) {
+                              setCurrentPage(clampedPage + 1);
+                            }
+                          }}
+                          className={
+                            clampedPage === totalPages ? 'pointer-events-none opacity-50' : ''
+                          }
+                        />
+                      </PaginationItem>
+                    </PaginationContent>
+                  </Pagination>
+                )}
+              </>
+            )}
+          </Card>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full p-6 overflow-y-auto">
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-5xl mx-auto">
         <div className="mb-6">
-          <h2 className="text-2xl font-bold text-foreground mb-2">Bulk Messaging</h2>
+          <h2 className="text-2xl font-bold text-foreground mb-2">Create Campaign</h2>
           <p className="text-muted-foreground">Send WhatsApp messages to multiple clients at once</p>
         </div>
 
@@ -701,59 +1382,7 @@ export const BulkMessaging = ({ onBulkMessageComplete }: BulkMessagingProps) => 
         )}
 
         {/* Step 4: Sending Progress */}
-        {step === 4 && (
-          <Card className="p-6">
-            <h3 className="text-lg font-semibold mb-4">
-              {sendingProgress < 100 ? 'Sending Messages...' : 'Messages Sent Successfully!'}
-            </h3>
-            <div className="space-y-4">
-              {/* Debug info */}
-              <div className="p-2 bg-gray-100 rounded text-xs">
-                <strong>Debug Info:</strong> Progress: {sendingProgress}%, 
-                Actual Count: {actualMessageCount}, 
-                Valid Contacts: {validContacts.length}, 
-                Bulk Message ID: {bulkMessageId}
-              </div>
-              
-              {/* Manual test button */}
-              {bulkMessageId && (
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  onClick={async () => {
-                    console.log('🧪 Manual test - calling API...');
-                    try {
-                      const response = await bulkMessageApi.getBulkMessageStatus(bulkMessageId);
-                      console.log('🧪 Manual test response:', response);
-                    } catch (error) {
-                      console.error('🧪 Manual test error:', error);
-                    }
-                  }}
-                >
-                  Test API Call
-                </Button>
-              )}
-              
-              <Progress value={sendingProgress} className="w-full" />
-              <p className="text-sm text-muted-foreground text-center">
-                {sendingProgress < 100 
-                  ? `Sending ${Math.floor((sendingProgress / 100) * (actualMessageCount || validContacts.length))} of ${actualMessageCount || validContacts.length} messages...`
-                  : `All ${actualMessageCount || validContacts.length} messages sent successfully!`
-                }
-              </p>
-              {sendingProgress >= 100 && (
-                <div className="flex justify-center space-x-2">
-                  <Button onClick={resetWizard}>
-                    Send Another Batch
-                  </Button>
-                  <Button variant="outline" onClick={() => setStep(1)}>
-                    Back to Dashboard
-                  </Button>
-                </div>
-              )}
-            </div>
-          </Card>
-        )}
+        {step === 4 && renderReportCard({ showActions: true })}
       </div>
     </div>
   );

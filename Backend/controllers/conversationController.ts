@@ -286,10 +286,52 @@ export class ConversationController {
   static async getConversations(req: AuthRequest, res: Response) {
     try {
       const { status, assignedTo, tags } = req.query;
+      const { limit, offset } = (() => {
+        const DEFAULT_LIMIT = 30;
+        const MAX_LIMIT = 100;
+
+        const parseNumberParam = (value: unknown, fallback: number): number => {
+          if (Array.isArray(value) && value.length > 0) {
+            value = value[0];
+          }
+          if (typeof value === 'string') {
+            const parsed = parseInt(value, 10);
+            return Number.isNaN(parsed) ? fallback : parsed;
+          }
+          if (typeof value === 'number' && !Number.isNaN(value)) {
+            return value;
+          }
+          return fallback;
+        };
+
+        const rawLimit = parseNumberParam((req.query as any).limit, DEFAULT_LIMIT);
+        const rawOffset = parseNumberParam((req.query as any).offset, 0);
+
+        const normalizedLimit = Math.min(Math.max(rawLimit, 1), MAX_LIMIT);
+        const normalizedOffset = Math.max(rawOffset, 0);
+
+        return {
+          limit: normalizedLimit,
+          offset: normalizedOffset
+        };
+      })();
       const userId = req.user?.id;
       const userRole = req.user?.role;
       
       const filters: ConversationFilters = {};
+
+      console.log(
+        '[Conversations] Incoming request params:',
+        JSON.stringify({
+          status,
+          assignedTo,
+          tags,
+          limit,
+          offset,
+          userId,
+          userRole
+        })
+      );
       
       if (status && ['open', 'closed', 'pending'].includes(status as string)) {
         filters.status = status as 'open' | 'closed' | 'pending';
@@ -304,32 +346,65 @@ export class ConversationController {
       }
 
       // Role-based filtering with shared conversation support
-      let conversations: any[];
-      
+      const paginationOptions = { limit, offset };
+
+      let result: { conversations: any[]; totalCount: number };
+
       if (userRole === 'admin') {
         // Admin can see all conversations - no additional filtering needed
         console.log('👑 Admin user - showing all conversations');
-        conversations = await ConversationService.getAllConversations(filters);
+        result = await ConversationService.getAllConversations(filters, paginationOptions);
       } else {
         // Regular users see conversations where they have participated (sent messages)
-        console.log(`👤 Regular user (${userRole}) - showing conversations with participation`);
+        console.log(`👤 Regular user (${userRole}) - showing conver ations with participation`);
         if (!userId) {
           return res.status(401).json({
             success: false,
             message: 'User ID not found in token'
           });
         }
-        conversations = await ConversationService.getConversationsWithUserParticipation(userId, filters);
+        result = await ConversationService.getConversationsWithUserParticipation(
+          userId, 
+          filters,
+          paginationOptions
+        );
       }
 
-      console.log(`📊 Retrieved ${conversations.length} conversations for user ${userId} (role: ${userRole})`);
+      const { conversations, totalCount } = result;
+      const hasMore = offset + conversations.length < totalCount;
+      const currentPage = Math.floor(offset / limit) + 1;
+      const totalPages = Math.max(Math.ceil(totalCount / limit), 1);
+
+      console.log(
+        `📊 Retri9999eved ${conversations.length} conversations (total: ${totalCount}) for user ${userId} (role: ${userRole}) [offset=${offset}, limit=${limit}]`
+      );
+
+      console.log(
+        '[Conversations] Pagination response summary:',
+        JSON.stringify({
+          limit,
+          offset,
+          hasMore,
+          page: currentPage,
+          totalPages,
+          returned: conversations.length,
+          totalCount
+        })
+      );
 
       res.json({
         success: true,
         message: 'Conversations retrieved successfully',
         data: {
           conversations,
-          count: conversations.length
+          count: totalCount,
+          pagination: {
+            limit,
+            offset,
+            hasMore,
+            page: currentPage,
+            totalPages
+          }
         }
       });
 
