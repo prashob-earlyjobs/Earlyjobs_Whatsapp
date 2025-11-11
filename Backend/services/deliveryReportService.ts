@@ -45,6 +45,33 @@ export class DeliveryReportService {
   }
 
   /**
+   * Get latest delivery report for a list of message IDs
+   */
+  static async getLatestDeliveryReportsForMessages(
+    messageIds: string[]
+  ): Promise<Record<string, IDeliveryReport>> {
+    if (!messageIds || messageIds.length === 0) {
+      return {};
+    }
+
+    const reports = await DeliveryReport.aggregate([
+      { $match: { messageId: { $in: messageIds } } },
+      { $sort: { eventTs: -1 } },
+      {
+        $group: {
+          _id: '$messageId',
+          report: { $first: '$$ROOT' }
+        }
+      }
+    ]);
+
+    return reports.reduce((acc: Record<string, IDeliveryReport>, item: any) => {
+      acc[item._id] = item.report as IDeliveryReport;
+      return acc;
+    }, {});
+  }
+
+  /**
    * Get delivery reports for a phone number (for analytics)
    */
   static async getDeliveryReportsByPhone(

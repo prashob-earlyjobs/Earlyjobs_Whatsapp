@@ -15,6 +15,11 @@ export interface ConversationFilters {
   tags?: string[];
 }
 
+interface PaginationOptions {
+  limit?: number;
+  offset?: number;
+}
+
 export class ConversationService {
   /**
    * Find or create conversation for a contact
@@ -141,7 +146,10 @@ export class ConversationService {
       .sort({ updatedAt: -1 });
   }
 
-  static async getAllConversations(filters: ConversationFilters = {}): Promise<IConversation[]> {
+  static async getAllConversations(
+    filters: ConversationFilters = {},
+    pagination: PaginationOptions = {}
+  ): Promise<{ conversations: IConversation[]; totalCount: number }> {
     const query: any = {};
 
     if (filters.status) {
@@ -160,10 +168,27 @@ export class ConversationService {
       query.tags = { $in: filters.tags };
     }
 
-    return await Conversation.find(query)
+    const totalCount = await Conversation.countDocuments(query);
+
+    const mongoQuery = Conversation.find(query)
       .populate('contactId', 'name phoneNumber email')
       .populate('assignedTo', 'name email')
       .sort({ lastMessageAt: -1 });
+
+    if (typeof pagination.offset === 'number' && pagination.offset > 0) {
+      mongoQuery.skip(pagination.offset);
+    }
+
+    if (typeof pagination.limit === 'number' && pagination.limit > 0) {
+      mongoQuery.limit(pagination.limit);
+    }
+
+    const conversations = await mongoQuery;
+
+    return {
+      conversations,
+      totalCount
+    };
   }
 
   /**
@@ -172,8 +197,9 @@ export class ConversationService {
    */
   static async getConversationsWithUserParticipation(
     userId: string, 
-    filters: ConversationFilters = {}
-  ): Promise<IConversation[]> {
+    filters: ConversationFilters = {},
+    pagination: PaginationOptions = {}
+  ): Promise<{ conversations: IConversation[]; totalCount: number }> {
     const query: any = {
       'participants.userId': userId
     };
@@ -193,10 +219,27 @@ export class ConversationService {
 
     // Note: We don't apply assignedTo filter here since we want shared access
     
-    return await Conversation.find(query)
+    const totalCount = await Conversation.countDocuments(query);
+
+    const mongoQuery = Conversation.find(query)
       .populate('contactId', 'name phoneNumber email')
       .populate('assignedTo', 'name email')
       .sort({ lastMessageAt: -1 });
+
+    if (typeof pagination?.offset === 'number' && pagination.offset > 0) {
+      mongoQuery.skip(pagination.offset);
+    }
+
+    if (typeof pagination?.limit === 'number' && pagination.limit > 0) {
+      mongoQuery.limit(pagination.limit);
+    }
+
+    const conversations = await mongoQuery;
+
+    return {
+      conversations,
+      totalCount
+    };
   }
 
   static async updateConversationStatus(

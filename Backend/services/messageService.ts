@@ -6,6 +6,7 @@ export interface CreateMessageData {
   conversationId: string;
   contactId: string;
   senderId?: string;
+  bulkMessageId?: string;
   messageId: string;
   type: 'text' | 'image' | 'document' | 'template';
   content: IMessageContent;

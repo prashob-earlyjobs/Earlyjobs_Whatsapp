@@ -111,6 +111,23 @@ export interface ConversationFilters {
   tags?: string[];
 }
 
+export interface ConversationPaginationMeta {
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+}
+
+export interface ConversationsPayload {
+  conversations: Conversation[];
+  count: number;
+  pagination?: ConversationPaginationMeta;
+}
+
+export interface ConversationPaginationParams {
+  limit?: number;
+  offset?: number;
+}
+
 // User Types
 export interface UserData {
   id: string;
@@ -336,7 +353,10 @@ export const conversationApi = {
   },
 
   // Get all conversations with optional filters
-  getConversations: async (filters?: ConversationFilters): Promise<ApiResponse<{ conversations: Conversation[]; count: number }>> => {
+  getConversations: async (
+    filters?: ConversationFilters,
+    pagination?: ConversationPaginationParams
+  ): Promise<ApiResponse<ConversationsPayload>> => {
     const queryParams = new URLSearchParams();
     
     if (filters?.status) queryParams.append('status', filters.status);
@@ -345,8 +365,16 @@ export const conversationApi = {
       filters.tags.forEach(tag => queryParams.append('tags', tag));
     }
 
+    if (pagination?.limit !== undefined) {
+      queryParams.append('limit', String(pagination.limit));
+    }
+
+    if (pagination?.offset !== undefined) {
+      queryParams.append('offset', String(pagination.offset));
+    }
+
     const endpoint = `/conversations${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-    return apiRequest<{ conversations: Conversation[]; count: number }>(endpoint);
+    return apiRequest<ConversationsPayload>(endpoint);
   },
 
   // Get specific conversation by ID
@@ -748,6 +776,48 @@ export interface BulkMessageStatus {
   progress: number;
 }
 
+export interface BulkMessageReportEntry {
+  contactId: string | null;
+  name: string;
+  phoneNumber: string;
+  email?: string;
+  messageId: string | null;
+  messageStatus: string;
+  deliveryStatus: string | null;
+  deliveryEventType: string | null;
+  deliveryCause: string | null;
+  deliveryErrorCode: string | null;
+  destinationAddress: string | null;
+  lastUpdatedAt: string | null;
+}
+
+export interface BulkMessageReportSummary {
+  totalContacts: number;
+  pending: number;
+  sent: number;
+  delivered: number;
+  read: number;
+  failed: number;
+  successRate: number;
+}
+
+export interface BulkMessageReportPayload {
+  bulkMessage: {
+    id: string;
+    name: string;
+    status: string;
+    templateName?: string;
+    createdAt: string;
+    createdBy: {
+      id: string;
+      name: string;
+      email?: string;
+    } | null;
+  };
+  summary: BulkMessageReportSummary;
+  entries: BulkMessageReportEntry[];
+}
+
 // Bulk Message API
 export const bulkMessageApi = {
   // Validate contacts before creating bulk message
@@ -810,6 +880,12 @@ export const bulkMessageApi = {
   // Get bulk message status
   async getBulkMessageStatus(id: string): Promise<ApiResponse<BulkMessageStatus>> {
     return apiRequest(`/bulk-messages/${id}/status`);
+  },
+
+  async getBulkMessageReport(id: string): Promise<ApiResponse<{
+    report: BulkMessageReportPayload;
+  }>> {
+    return apiRequest(`/bulk-messages/${id}/report`);
   },
 
   // Cancel bulk message

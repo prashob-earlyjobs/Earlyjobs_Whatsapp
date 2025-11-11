@@ -1,5 +1,5 @@
 
-import { MessageCircle, Users, FileText, BarChart3, Settings, Send } from 'lucide-react';
+import { MessageCircle, Users, FileText, BarChart3, Settings, Send, History } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -14,6 +14,7 @@ export const Sidebar = ({ activeView, onViewChange }: SidebarProps) => {
   const menuItems = [
     { id: 'chats', label: 'Conversations', icon: MessageCircle },
     { id: 'bulk', label: 'Bulk Messaging', icon: Send },
+    { id: 'bulk-history', label: 'Bulk Message History', icon: History },
     { id: 'templates', label: 'Templates', icon: FileText },
     // Only show analytics for admin users
     ...(user?.role === 'admin' ? [{ id: 'analytics', label: 'Analytics', icon: BarChart3 }] : []),

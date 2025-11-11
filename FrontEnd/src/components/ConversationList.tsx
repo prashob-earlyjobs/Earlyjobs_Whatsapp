@@ -1,5 +1,5 @@
 
-import { useEffect } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -27,12 +27,18 @@ export const ConversationList = ({
   const {
     conversations,
     loading,
+    loadingMore,
     error,
     count,
+    hasMore,
     refreshConversations,
+    loadMoreConversations,
     updateConversationStatus,
     markAsRead
   } = useConversations();
+
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
 
       // Refresh conversations when refreshTrigger changes
     useEffect(() => {
@@ -52,15 +58,51 @@ export const ConversationList = ({
     }
   }, [error, loading, refreshConversations]);
 
+  // Infinite scroll observer
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    const root = listRef.current;
+
+    if (!sentinel || !root) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      entries => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting && hasMore && !loading && !loadingMore) {
+            loadMoreConversations();
+          }
+        });
+      },
+      {
+        root,
+        rootMargin: '96px',
+        threshold: 0.1,
+      }
+    );
+
+    observer.observe(sentinel);
+
+    return () => observer.disconnect();
+  }, [hasMore, loading, loadingMore, loadMoreConversations]);
+
   // Filter conversations based on search query
-  const filteredConversations = conversations.filter(conv => {
-    const contact = conv.contactId;
-    const contactName = contact.name?.toLowerCase() || '';
-    const contactPhone = contact.phoneNumber || '';
-    const searchLower = searchQuery.toLowerCase();
-    
-    return contactName.includes(searchLower) || contactPhone.includes(searchLower);
-  });
+  const filteredConversations = useMemo(() => {
+    const normalizedQuery = searchQuery.trim().toLowerCase();
+
+    if (!normalizedQuery) {
+      return conversations;
+    }
+
+    return conversations.filter(conv => {
+      const contact = conv.contactId;
+      const contactName = contact.name?.toLowerCase() || '';
+      const contactPhone = contact.phoneNumber || '';
+      
+      return contactName.includes(normalizedQuery) || contactPhone.includes(normalizedQuery);
+    });
+  }, [conversations, searchQuery]);
 
   // Format time display
   const formatTime = (dateString: string) => {
@@ -205,7 +247,7 @@ export const ConversationList = ({
   }
 
   return (
-    <div className="flex-1 overflow-y-auto">
+    <div ref={listRef} className="flex-1 overflow-y-auto">
       {/* Header with count */}
       <div className="sticky top-0 bg-background border-b border-border px-4 py-2 flex items-center justify-between">
         <span className="text-sm text-muted-foreground">
@@ -225,7 +267,6 @@ export const ConversationList = ({
       {/* Conversation list */}
       {filteredConversations.map((conversation) => {
         const contact = conversation.contactId;
-        const lastMessage = conversation.lastMessage;
         const isSelected = selectedConversation?._id === conversation._id;
         
         return (
@@ -318,11 +359,21 @@ export const ConversationList = ({
           </div>
         );
       })}
+
+      {/* Sentinel for infinite scroll */}
+      <div ref={sentinelRef} className="h-1" />
       
       {/* Loading more indicator */}
-      {loading && conversations.length > 0 && (
+      {loadingMore && (
         <div className="p-4 text-center">
           <RefreshCw className="h-4 w-4 animate-spin mx-auto" />
+        </div>
+      )}
+
+      {/* End of list indicator */}
+      {!loading && !loadingMore && conversations.length > 0 && !hasMore && (
+        <div className="p-4 text-center text-xs text-muted-foreground">
+          You&apos;ve reached the end of the conversation list
         </div>
       )}
     </div>
