@@ -29,8 +29,9 @@ import { Separator } from '@/components/ui/separator';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { toast } from 'sonner';
 
-import { templateApi, GupshupTemplate } from '@/lib/api';
+import { templateApi, GupshupTemplate, userApi, UserData } from '@/lib/api';
 import { tokenManager } from '@/lib/auth-api';
+import { Checkbox } from '@/components/ui/checkbox';
 
 // Form validation schema
 const templateSchema = z.object({
@@ -58,6 +59,7 @@ export const CreateTemplateModal = ({ open, onClose }: CreateTemplateModalProps)
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGupshupTemplate, setSelectedGupshupTemplate] = useState<GupshupTemplate | null>(null);
   const [showGupshupPreview, setShowGupshupPreview] = useState(false);
+  const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   
   const queryClient = useQueryClient();
   
@@ -89,6 +91,14 @@ export const CreateTemplateModal = ({ open, onClose }: CreateTemplateModalProps)
     enabled: open,
     retry: 1,
     retryDelay: 1000,
+  });
+
+  // Fetch users for assignment
+  const { data: usersData } = useQuery({
+    queryKey: ['users'],
+    queryFn: () => userApi.getAllUsers(),
+    enabled: open,
+    retry: 1,
   });
 
   // Save template mutation
@@ -169,6 +179,7 @@ export const CreateTemplateModal = ({ open, onClose }: CreateTemplateModalProps)
       setSelectedGupshupTemplate(null);
       setSearchQuery('');
       setShowGupshupPreview(false);
+      setSelectedUsers([]);
     }
   }, [open, form]);
 
@@ -241,6 +252,7 @@ export const CreateTemplateModal = ({ open, onClose }: CreateTemplateModalProps)
         body: data.body,
         header: data.header || undefined,
         footer: data.footer || undefined,
+        users: selectedUsers.length > 0 ? selectedUsers : undefined,
       });
     }
   };
@@ -604,6 +616,51 @@ export const CreateTemplateModal = ({ open, onClose }: CreateTemplateModalProps)
                       </FormItem>
                     )}
                   />
+
+                  {/* User Assignment */}
+                  <div>
+                    <Label className="text-sm font-medium mb-2 block">
+                      Assign to Users (Optional)
+                    </Label>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      Select users who can access this template. Leave empty to make it accessible to all users.
+                    </p>
+                    <div className="max-h-40 overflow-y-auto border rounded-lg p-3 space-y-2">
+                      {usersData?.data?.users ? (
+                        usersData.data.users.map((user: UserData) => (
+                          <div key={user.id} className="flex items-center space-x-2">
+                            <Checkbox
+                              id={`user-${user.id}`}
+                              checked={selectedUsers.includes(user.id)}
+                              onCheckedChange={(checked) => {
+                                if (checked) {
+                                  setSelectedUsers([...selectedUsers, user.id]);
+                                } else {
+                                  setSelectedUsers(selectedUsers.filter(id => id !== user.id));
+                                }
+                              }}
+                            />
+                            <Label
+                              htmlFor={`user-${user.id}`}
+                              className="text-sm font-normal cursor-pointer flex-1"
+                            >
+                              {user.name} ({user.email})
+                            </Label>
+                            <Badge variant="outline" className="text-xs">
+                              {user.role}
+                            </Badge>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-sm text-muted-foreground">Loading users...</p>
+                      )}
+                    </div>
+                    {selectedUsers.length > 0 && (
+                      <p className="text-xs text-muted-foreground mt-2">
+                        {selectedUsers.length} user{selectedUsers.length !== 1 ? 's' : ''} selected
+                      </p>
+                    )}
+                  </div>
 
                   {/* Variables Display */}
                   {variables.length > 0 && (

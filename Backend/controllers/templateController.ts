@@ -351,7 +351,7 @@ export class TemplateController {
   // POST /api/templates/create-custom
   static async createCustomTemplate(req: AuthRequest, res: Response) {
     try {
-      const { name, category, language, department, body, header, footer, buttons } = req.body;
+      const { name, category, language, department, body, header, footer, buttons, users } = req.body;
 
       // Validation
       if (!name || !category || !language || !body) {
@@ -365,6 +365,14 @@ export class TemplateController {
         return res.status(401).json({
           success: false,
           message: 'User authentication required'
+        });
+      }
+
+      // Only admins can create templates
+      if (req.user?.role !== 'admin') {
+        return res.status(403).json({
+          success: false,
+          message: 'Only admins can create templates'
         });
       }
 
@@ -389,7 +397,8 @@ export class TemplateController {
         header,
         footer,
         buttons,
-        createdBy: req.user.id
+        createdBy: req.user.id,
+        users: users && Array.isArray(users) ? users : undefined
       };
 
       const savedTemplate = await TemplateService.createTemplate(templateData);
@@ -423,6 +432,14 @@ export class TemplateController {
         return res.status(401).json({
           success: false,
           message: 'User authentication required'
+        });
+      }
+
+      // Only admins can update templates
+      if (req.user?.role !== 'admin') {
+        return res.status(403).json({
+          success: false,
+          message: 'Only admins can update templates'
         });
       }
 
@@ -498,9 +515,10 @@ export class TemplateController {
   }
 
   // GET /api/templates (local database templates)
-  static async getLocalTemplates(req: Request, res: Response) {
+  static async getLocalTemplates(req: AuthRequest, res: Response) {
     try {
       const { status, category, language, createdBy } = req.query;
+      const userId = req.user?.id;
 
       const filters: TemplateFilters = {};
       
@@ -524,6 +542,12 @@ export class TemplateController {
 
       if (createdBy && typeof createdBy === 'string') {
         filters.createdBy = createdBy;
+      }
+
+      // If user is not admin, filter templates by user access
+      // Admins can see all templates
+      if (userId && req.user?.role !== 'admin') {
+        filters.userId = userId;
       }
 
       const templates = await TemplateService.getAllTemplates(filters);

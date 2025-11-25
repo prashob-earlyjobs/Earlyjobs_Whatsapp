@@ -46,7 +46,7 @@ router.get('/categories/local', TemplateController.getLocalTemplateCategories);
 router.get('/test-encoding', TemplateController.testUrlEncoding);
 
 // GET /api/templates - List local templates from database
-router.get('/', TemplateController.getLocalTemplates);
+router.get('/', authenticateToken, TemplateController.getLocalTemplates);
 
 // GET /api/templates/:id - Get local template by ID (MUST come after specific routes)
 router.get('/:id', TemplateController.getLocalTemplateById);

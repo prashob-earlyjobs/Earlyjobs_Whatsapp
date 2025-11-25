@@ -515,7 +515,8 @@ export interface LocalTemplate {
     url?: string;
     phoneNumber?: string;
   }>;
-  createdBy: string;
+  createdBy: string | { _id: string; name: string; email: string };
+  users?: Array<{ _id: string; name: string; email: string }> | string[]; // Array of user IDs or populated user objects
   createdAt: string;
   updatedAt: string;
 }
@@ -625,6 +626,7 @@ export const templateApi = {
       url?: string;
       phoneNumber?: string;
     }>;
+    users?: string[]; // Array of user IDs who can access this template
   }): Promise<ApiResponse<{
     template: LocalTemplate;
   }>> => {

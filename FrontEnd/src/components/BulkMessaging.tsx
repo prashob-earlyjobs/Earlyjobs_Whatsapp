@@ -55,10 +55,10 @@ export const BulkMessaging = ({ onBulkMessageComplete, mode = 'create' }: BulkMe
   const itemsPerPage = 10;
   const reportItemsPerPage = 50;
 
-  // Fetch templates
+  // Fetch templates - only approved templates assigned to the current user
   const { data: templatesData, isLoading: isLoadingTemplates } = useQuery({
-    queryKey: ['localTemplates'],
-    queryFn: () => templateApi.getLocalTemplates(),
+    queryKey: ['localTemplates', 'approved'],
+    queryFn: () => templateApi.getLocalTemplates({ status: 'approved' }),
   });
 
   const {

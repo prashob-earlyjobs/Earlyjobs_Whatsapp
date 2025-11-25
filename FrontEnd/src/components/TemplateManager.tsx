@@ -344,6 +344,31 @@ export const TemplateManager = () => {
                   )}
                 </div>
 
+                {/* Assigned Users */}
+                {template.users && Array.isArray(template.users) && template.users.length > 0 && (
+                  <div className="mb-2">
+                    <p className="text-xs text-muted-foreground mb-1">Assigned to:</p>
+                    <div className="flex flex-wrap gap-1">
+                      {template.users.map((user: any, index: number) => {
+                        const userName = typeof user === 'object' ? user.name : 'User';
+                        const userEmail = typeof user === 'object' ? user.email : '';
+                        return (
+                          <Badge key={index} variant="outline" className="text-xs">
+                            {userName}
+                          </Badge>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                {(!template.users || (Array.isArray(template.users) && template.users.length === 0)) && (
+                  <div className="mb-2">
+                    <Badge variant="secondary" className="text-xs">
+                      Accessible to all users
+                    </Badge>
+                  </div>
+                )}
+
                 <div className="flex items-center space-x-1">
                   <TemplatePreviewDialog template={template} />
                   <Button variant="ghost" size="sm">
