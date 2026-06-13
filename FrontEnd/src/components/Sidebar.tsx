@@ -15,10 +15,16 @@ export const Sidebar = ({ activeView, onViewChange }: SidebarProps) => {
     { id: 'chats', label: 'Conversations', icon: MessageCircle },
     { id: 'bulk', label: 'Bulk Messaging', icon: Send },
     { id: 'bulk-history', label: 'Bulk Message History', icon: History },
-    { id: 'templates', label: 'Templates', icon: FileText },
-    // Only show analytics for admin users
-    ...(user?.role === 'admin' ? [{ id: 'analytics', label: 'Analytics', icon: BarChart3 }] : []),
-    { id: 'users', label: 'User Management', icon: Users },
+    // Only show templates for admin users
+    ...(user?.role === 'admin' ? [{ id: 'templates', label: 'Templates', icon: FileText }] : []),
+    // Only show analytics and user management for admin users
+    ...(user?.role === 'admin' 
+      ? [
+          { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+          { id: 'users', label: 'User Management', icon: Users }
+        ] 
+      : []
+    ),
   ];
 
   return (
@@ -64,11 +70,24 @@ export const Sidebar = ({ activeView, onViewChange }: SidebarProps) => {
       <div className="p-4 border-t border-border">
         <div className="flex items-center space-x-3">
           <div className="w-8 h-8 bg-muted rounded-full flex items-center justify-center">
-            <span className="text-muted-foreground text-sm">AD</span>
+            <span className="text-muted-foreground text-sm">
+              {user?.name
+                ? user.name
+                    .split(' ')
+                    .map((n) => n[0])
+                    .join('')
+                    .toUpperCase()
+                    .slice(0, 2)
+                : 'U'}
+            </span>
           </div>
           <div className="flex-1">
-            <p className="text-sm font-medium text-foreground">Admin User</p>
-            <p className="text-xs text-muted-foreground">admin@earlyjobs.com</p>
+            <p className="text-sm font-medium text-foreground">
+              {user?.name || 'User'}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {user?.email || 'No email'}
+            </p>
           </div>
           <Settings className="w-4 h-4 text-muted-foreground" />
         </div>

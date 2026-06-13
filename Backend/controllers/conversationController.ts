@@ -791,28 +791,30 @@ export class ConversationController {
               });
             }
             
-            // Extract header and footer from template
-            const header = template.header?.content;
+            // Extract header and footer from template (header can be text or image URL)
+            const header = template.header?.type === 'text' ? template.header.content : undefined;
             const footer = template.footer;
-            
+            const isImageTemplate = template.header?.type === 'image' && !!template.header?.content;
 
-            
-            // Add rendered text, header, and footer to content for saving
+            // Add rendered text, header, footer, and mediaUrl (for image template) to content for saving
             content.text = renderedText;
             content.header = header;
             content.footer = footer;
-            
-            // Prepare template data for validation and sending
+            if (isImageTemplate) {
+              content.mediaUrl = template.header!.content;
+            }
+
+            // Prepare template data for validation (text header only; image uses media_url)
             const templateData = {
               message: renderedText,
-              header: header,
-              footer: footer,
+              header,
+              footer,
               templateId: template.templateId,
               category: template.category,
               language: template.language,
               isTemplate: true
             };
-            
+
             // Validate template before sending
             const validation = GupshupService.validateTemplateMessage(templateData);
             if (!validation.isValid) {
@@ -822,12 +824,27 @@ export class ConversationController {
                 errors: validation.errors
               });
             }
-            
-            // Use enhanced template message sending with conditions
-            gupshupResponse = await GupshupService.sendTemplateMessageWithConditions(
-              contact.phoneNumber,
-              templateData
-            );
+
+            // Use image template API when template has image header, else text template API
+            if (isImageTemplate) {
+              gupshupResponse = await GupshupService.sendImageTemplateMessage(
+                contact.phoneNumber,
+                renderedText,
+                template.header!.content,
+                footer,
+                {
+                  isTemplate: true,
+                  templateId: template.templateId,
+                  category: template.category,
+                  language: template.language
+                }
+              );
+            } else {
+              gupshupResponse = await GupshupService.sendTemplateMessageWithConditions(
+                contact.phoneNumber,
+                templateData
+              );
+            }
             messageId = gupshupResponse.messageId;
             break;
 

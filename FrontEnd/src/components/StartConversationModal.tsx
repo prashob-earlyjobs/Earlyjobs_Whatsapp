@@ -57,10 +57,10 @@ export const StartConversationModal: React.FC<StartConversationModalProps> = ({
   // Debounce phone number input for contact search
   const debouncedPhoneNumber = useDebounce(formData.phoneNumber, 300);
 
-  // Fetch local templates from database
+  // Fetch local templates from database - only approved templates assigned to the current user
   const { data: templatesData, isLoading: isLoadingTemplates } = useQuery({
-    queryKey: ['localTemplates'],
-    queryFn: () => templateApi.getLocalTemplates(),
+    queryKey: ['localTemplates', 'approved'],
+    queryFn: () => templateApi.getLocalTemplates({ status: 'approved' }),
     enabled: isOpen, // Only fetch when modal is open
   });
 

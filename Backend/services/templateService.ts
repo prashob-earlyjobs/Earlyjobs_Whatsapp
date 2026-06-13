@@ -1,4 +1,5 @@
 import Template, { ITemplate } from '../models/Template';
+import { Types } from 'mongoose';
 
 export interface CreateTemplateData {
   name: string;
@@ -22,6 +23,7 @@ export interface CreateTemplateData {
     phoneNumber?: string;
   }>;
   createdBy: string;
+  users?: string[]; // Array of user IDs who can access this template
 }
 
 export interface TemplateFilters {
@@ -30,6 +32,7 @@ export interface TemplateFilters {
   language?: string;
   department?: string;
   createdBy?: string;
+  userId?: string; // Filter templates accessible to a specific user
 }
 
 export class TemplateService {
@@ -56,29 +59,69 @@ export class TemplateService {
 
   static async getAllTemplates(filters: TemplateFilters = {}): Promise<ITemplate[]> {
     const query: any = {};
+    const baseFilters: any = {};
 
+    // Build base filters (status, category, language, department, createdBy)
     if (filters.status) {
-      query.status = filters.status;
+      baseFilters.status = filters.status;
     }
 
     if (filters.category) {
-      query.category = filters.category;
+      baseFilters.category = filters.category;
     }
 
     if (filters.language) {
-      query.language = filters.language;
+      baseFilters.language = filters.language;
     }
 
     if (filters.department) {
-      query.department = filters.department;
+      baseFilters.department = filters.department;
     }
 
     if (filters.createdBy) {
-      query.createdBy = filters.createdBy;
+      baseFilters.createdBy = filters.createdBy;
     }
 
+    // Filter by user access: if userId is provided, show templates where:
+    // - users array contains the userId, OR
+    // - createdBy matches the userId
+    // Note: Templates with empty/null users array are NOT shown to non-admin users
+    // Only explicitly assigned users or the creator can see the template
+    if (filters.userId) {
+      // Convert userId string to ObjectId for proper comparison
+      const userIdObjectId = new Types.ObjectId(filters.userId);
+      
+      // Build user access conditions - templates accessible to this user
+      const userAccessConditions = {
+        $or: [
+          { users: { $in: [userIdObjectId] } },
+          { createdBy: userIdObjectId }
+        ]
+      };
+
+      // Combine base filters with user access filter using $and
+      // This ensures both conditions must be met
+      const andConditions: any[] = [];
+      
+      // Add base filters if any exist
+      if (Object.keys(baseFilters).length > 0) {
+        andConditions.push(baseFilters);
+      }
+      
+      // Always add user access conditions
+      andConditions.push(userAccessConditions);
+      
+      query.$and = andConditions;
+    } else {
+      // No user filter, just use base filters directly
+      Object.assign(query, baseFilters);
+    }
+
+    console.log('🔍 Template query:', JSON.stringify(query, null, 2));
+    
     return await Template.find(query)
       .populate('createdBy', 'name email')
+      .populate('users', 'name email')
       .sort({ createdAt: -1 });
   }
 

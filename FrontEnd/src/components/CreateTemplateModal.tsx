@@ -29,8 +29,9 @@ import { Separator } from '@/components/ui/separator';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { toast } from 'sonner';
 
-import { templateApi, GupshupTemplate } from '@/lib/api';
+import { templateApi, GupshupTemplate, userApi, UserData } from '@/lib/api';
 import { tokenManager } from '@/lib/auth-api';
+import { Checkbox } from '@/components/ui/checkbox';
 
 // Form validation schema
 const templateSchema = z.object({
@@ -41,6 +42,8 @@ const templateSchema = z.object({
   department: z.string().optional(),
   body: z.string().min(1, 'Template body is required'),
   header: z.string().optional(),
+  headerType: z.enum(['text', 'image']).optional(),
+  headerImageUrl: z.string().optional(),
   footer: z.string().optional(),
 });
 
@@ -58,6 +61,7 @@ export const CreateTemplateModal = ({ open, onClose }: CreateTemplateModalProps)
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGupshupTemplate, setSelectedGupshupTemplate] = useState<GupshupTemplate | null>(null);
   const [showGupshupPreview, setShowGupshupPreview] = useState(false);
+  const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   
   const queryClient = useQueryClient();
   
@@ -74,6 +78,8 @@ export const CreateTemplateModal = ({ open, onClose }: CreateTemplateModalProps)
       department: '',
       body: '',
       header: '',
+      headerType: 'text',
+      headerImageUrl: '',
       footer: '',
     },
   });
@@ -81,7 +87,7 @@ export const CreateTemplateModal = ({ open, onClose }: CreateTemplateModalProps)
   // Fetch Gupshup templates
   const { data: gupshupTemplatesData, isLoading: isLoadingGupshup, error: gupshupError } = useQuery({
     queryKey: ['gupshupTemplates', { search: searchQuery, status: 'ENABLED' }],
-    queryFn: () => templateApi.getGupshupTemplates({ 
+    queryFn: () => templateApi.getGupshupTemplates({
       search: searchQuery || undefined,
       status: 'ENABLED',
       limit: 1000 
@@ -89,6 +95,14 @@ export const CreateTemplateModal = ({ open, onClose }: CreateTemplateModalProps)
     enabled: open,
     retry: 1,
     retryDelay: 1000,
+  });
+
+  // Fetch users for assignment
+  const { data: usersData } = useQuery({
+    queryKey: ['users'],
+    queryFn: () => userApi.getAllUsers(),
+    enabled: open,
+    retry: 1,
   });
 
   // Save template mutation
@@ -129,8 +143,9 @@ export const CreateTemplateModal = ({ open, onClose }: CreateTemplateModalProps)
       language: string;
       department?: string;
       body: string;
-      header?: string;
+      header?: string | { type: 'text' | 'image' | 'document'; content: string };
       footer?: string;
+      users?: string[];
     }) => templateApi.createCustomTemplate(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['localTemplates'] });
@@ -169,6 +184,7 @@ export const CreateTemplateModal = ({ open, onClose }: CreateTemplateModalProps)
       setSelectedGupshupTemplate(null);
       setSearchQuery('');
       setShowGupshupPreview(false);
+      setSelectedUsers([]);
     }
   }, [open, form]);
 
@@ -233,14 +249,25 @@ export const CreateTemplateModal = ({ open, onClose }: CreateTemplateModalProps)
         return;
       }
       
+      // Build header: text, image URL, or undefined
+      let header: string | { type: 'text' | 'image' | 'document'; content: string } | undefined;
+      if (data.headerType === 'image' && data.headerImageUrl?.trim()) {
+        header = { type: 'image', content: data.headerImageUrl.trim() };
+      } else if (data.header?.trim()) {
+        header = { type: 'text', content: data.header.trim() };
+      } else {
+        header = undefined;
+      }
+
       createCustomMutation.mutate({
         name: data.customName,
         category: data.category,
         language: data.language,
         department: data.department || undefined,
         body: data.body,
-        header: data.header || undefined,
+        header,
         footer: data.footer || undefined,
+        users: selectedUsers.length > 0 ? selectedUsers : undefined,
       });
     }
   };
@@ -530,29 +557,71 @@ export const CreateTemplateModal = ({ open, onClose }: CreateTemplateModalProps)
                     />
                   </div>
 
-                  <FormField
-                    control={form.control}
-                    name="header"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
-                          Header (Optional)
-                          {isGupshupTemplateSelected && (
-                            <span className="text-xs text-muted-foreground ml-2">(From Gupshup - Cannot be modified)</span>
-                          )}
-                        </FormLabel>
-                        <FormControl>
-                          <Input 
-                            placeholder={isGupshupTemplateSelected ? "Header from Gupshup template" : "Enter header text"} 
-                            {...field} 
-                            readOnly={isGupshupTemplateSelected}
-                            className={isGupshupTemplateSelected ? "bg-muted text-muted-foreground" : ""}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  {!isGupshupTemplateSelected && (
+                    <FormField
+                      control={form.control}
+                      name="headerType"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Header type (Optional)</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value || 'text'}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Text or Image" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="text">Text</SelectItem>
+                              <SelectItem value="image">Image URL</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
+                  {form.watch('headerType') === 'image' && !isGupshupTemplateSelected ? (
+                    <FormField
+                      control={form.control}
+                      name="headerImageUrl"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Header image URL (Optional)</FormLabel>
+                          <FormControl>
+                            <Input
+                              placeholder="https://example.com/image.png"
+                              {...field}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  ) : (
+                    <FormField
+                      control={form.control}
+                      name="header"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>
+                            Header (Optional)
+                            {isGupshupTemplateSelected && (
+                              <span className="text-xs text-muted-foreground ml-2">(From Gupshup - Cannot be modified)</span>
+                            )}
+                          </FormLabel>
+                          <FormControl>
+                            <Input
+                              placeholder={isGupshupTemplateSelected ? "Header from Gupshup template" : "Enter header text"}
+                              {...field}
+                              readOnly={isGupshupTemplateSelected}
+                              className={isGupshupTemplateSelected ? "bg-muted text-muted-foreground" : ""}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
 
                   <FormField
                     control={form.control}
@@ -604,6 +673,51 @@ export const CreateTemplateModal = ({ open, onClose }: CreateTemplateModalProps)
                       </FormItem>
                     )}
                   />
+
+                  {/* User Assignment */}
+                  <div>
+                    <Label className="text-sm font-medium mb-2 block">
+                      Assign to Users (Optional)
+                    </Label>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      Select users who can access this template. Leave empty to make it accessible to all users.
+                    </p>
+                    <div className="max-h-40 overflow-y-auto border rounded-lg p-3 space-y-2">
+                      {usersData?.data?.users ? (
+                        usersData.data.users.map((user: UserData) => (
+                          <div key={user.id} className="flex items-center space-x-2">
+                            <Checkbox
+                              id={`user-${user.id}`}
+                              checked={selectedUsers.includes(user.id)}
+                              onCheckedChange={(checked) => {
+                                if (checked) {
+                                  setSelectedUsers([...selectedUsers, user.id]);
+                                } else {
+                                  setSelectedUsers(selectedUsers.filter(id => id !== user.id));
+                                }
+                              }}
+                            />
+                            <Label
+                              htmlFor={`user-${user.id}`}
+                              className="text-sm font-normal cursor-pointer flex-1"
+                            >
+                              {user.name} ({user.email})
+                            </Label>
+                            <Badge variant="outline" className="text-xs">
+                              {user.role}
+                            </Badge>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-sm text-muted-foreground">Loading users...</p>
+                      )}
+                    </div>
+                    {selectedUsers.length > 0 && (
+                      <p className="text-xs text-muted-foreground mt-2">
+                        {selectedUsers.length} user{selectedUsers.length !== 1 ? 's' : ''} selected
+                      </p>
+                    )}
+                  </div>
 
                   {/* Variables Display */}
                   {variables.length > 0 && (

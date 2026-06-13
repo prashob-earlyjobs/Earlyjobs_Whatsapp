@@ -25,6 +25,7 @@ export interface ITemplate extends Document {
   footer?: string;
   buttons: IButton[];
   createdBy: Types.ObjectId;
+  users?: Types.ObjectId[]; // Array of user IDs who can access this template
   createdAt: Date;
   updatedAt: Date;
 }
@@ -54,6 +55,7 @@ const TemplateSchema = new Schema<ITemplate>({
   footer: { type: String },
   buttons: [ButtonSchema],
   createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  users: [{ type: Schema.Types.ObjectId, ref: 'User' }], // Array of user IDs who can access this template
 }, { timestamps: true });
 
 export default model<ITemplate>('Template', TemplateSchema); 

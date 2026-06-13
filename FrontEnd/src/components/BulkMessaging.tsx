@@ -26,9 +26,15 @@ interface ProcessedContact {
   name: string;
   phoneNumber: string;
   email?: string;
+  contactId?: string;
   isValid: boolean;
   errors: string[];
-  [key: string]: any; // Allow dynamic properties for template variables
+  [key: string]: any;
+}
+
+interface PreparedCampaign {
+  contactIds: string[];
+  contactsData: Array<ContactData & { contactId: string }>;
 }
 
 interface BulkMessagingProps {
@@ -42,6 +48,7 @@ export const BulkMessaging = ({ onBulkMessageComplete, mode = 'create' }: BulkMe
   const [selectedTemplate, setSelectedTemplate] = useState<LocalTemplate | null>(null);
   const [contactsData, setContactsData] = useState<ContactData[]>([]);
   const [processedContacts, setProcessedContacts] = useState<ProcessedContact[]>([]);
+  const [preparedCampaign, setPreparedCampaign] = useState<PreparedCampaign | null>(null);
   const [csvErrors, setCsvErrors] = useState<string[]>([]);
   const [bulkMessageName, setBulkMessageName] = useState('');
   const [sendingProgress, setSendingProgress] = useState(0);
@@ -55,10 +62,10 @@ export const BulkMessaging = ({ onBulkMessageComplete, mode = 'create' }: BulkMe
   const itemsPerPage = 10;
   const reportItemsPerPage = 50;
 
-  // Fetch templates
+  // Fetch templates - only approved templates assigned to the current user
   const { data: templatesData, isLoading: isLoadingTemplates } = useQuery({
-    queryKey: ['localTemplates'],
-    queryFn: () => templateApi.getLocalTemplates(),
+    queryKey: ['localTemplates', 'approved'],
+    queryFn: () => templateApi.getLocalTemplates({ status: 'approved' }),
   });
 
   const {
@@ -80,12 +87,16 @@ export const BulkMessaging = ({ onBulkMessageComplete, mode = 'create' }: BulkMe
           name: result.originalData.name,
           phoneNumber: result.normalizedPhoneNumber || result.originalData.phoneNumber,
           email: result.originalData.email,
+          contactId: result.contactId,
           isValid: result.isValid,
           errors: result.errors || [],
-          // Preserve all custom variables from the original data
           ...result.originalData
         }));
         setProcessedContacts(results);
+        setPreparedCampaign({
+          contactIds: response.data.contactIds,
+          contactsData: response.data.contactsData,
+        });
         setStep(3);
       }
     },
@@ -99,14 +110,22 @@ export const BulkMessaging = ({ onBulkMessageComplete, mode = 'create' }: BulkMe
     mutationFn: (data: {
       name: string;
       templateId: string;
-      contactsData: ContactData[];
+      contacts: string[];
+      contactsData: Array<ContactData & { contactId: string }>;
     }) => bulkMessageApi.createBulkMessage(data),
     onSuccess: (response) => {
       if (response.success) {
         setBulkMessageId(response.data.bulkMessage._id);
         setSelectedHistoryMessage(response.data.bulkMessage);
         setStep(4);
-        toast.success('Bulk message started successfully!');
+        const excluded = response.data.excludedContacts ?? 0;
+        if (excluded > 0) {
+          toast.success(
+            `Campaign started with ${response.data.validContacts} contacts (${excluded} excluded)`
+          );
+        } else {
+          toast.success('Bulk message started successfully!');
+        }
         refetchBulkMessages();
         // Trigger refresh of conversation list to show new conversations
         if (onBulkMessageComplete) {
@@ -289,6 +308,7 @@ export const BulkMessaging = ({ onBulkMessageComplete, mode = 'create' }: BulkMe
       }
 
       setContactsData(normalizedContacts);
+      setPreparedCampaign(null);
       toast.success(`Successfully loaded ${normalizedContacts.length} contacts`);
       
       // Auto-validate after successful file upload
@@ -376,33 +396,16 @@ export const BulkMessaging = ({ onBulkMessageComplete, mode = 'create' }: BulkMe
       return;
     }
 
-    const validContacts = processedContacts.filter(c => c.isValid);
-    
-    if (validContacts.length === 0) {
-      toast.error('No valid contacts to send messages to');
+    if (!preparedCampaign || preparedCampaign.contactIds.length === 0) {
+      toast.error('No valid contacts to send messages to. Please re-validate your CSV.');
       return;
     }
 
     createBulkMessageMutation.mutate({
       name: bulkMessageName.trim(),
       templateId: selectedTemplate._id,
-      contactsData: validContacts.map(contact => {
-        // Create contact data with all custom variables
-        const contactData: ContactData = {
-          name: contact.name,
-          phoneNumber: contact.phoneNumber,
-          email: contact.email
-        };
-        
-        // Add all custom variables from the contact
-        Object.keys(contact).forEach(key => {
-          if (!['name', 'phoneNumber', 'email', 'isValid', 'errors'].includes(key)) {
-            contactData[key] = contact[key];
-          }
-        });
-        
-        return contactData;
-      })
+      contacts: preparedCampaign.contactIds,
+      contactsData: preparedCampaign.contactsData,
     });
   };
 
@@ -413,6 +416,7 @@ export const BulkMessaging = ({ onBulkMessageComplete, mode = 'create' }: BulkMe
     setSelectedTemplate(null);
     setContactsData([]);
     setProcessedContacts([]);
+    setPreparedCampaign(null);
     setCsvErrors([]);
     setBulkMessageName('');
     setSendingProgress(0);
@@ -1357,12 +1361,12 @@ export const BulkMessaging = ({ onBulkMessageComplete, mode = 'create' }: BulkMe
             )}
             
             <div className="flex justify-between">
-              <Button variant="outline" onClick={() => setStep(2)}>
+              <Button variant="outline" onClick={() => { setPreparedCampaign(null); setStep(2); }}>
                 Back to File Upload
               </Button>
               <Button 
                 onClick={handleSendBulkMessages} 
-                disabled={validContacts.length === 0 || createBulkMessageMutation.isPending || !bulkMessageName.trim()}
+                disabled={!preparedCampaign?.contactIds.length || createBulkMessageMutation.isPending || !bulkMessageName.trim()}
                 className="bg-green-600 hover:bg-green-700"
               >
                 {createBulkMessageMutation.isPending ? (

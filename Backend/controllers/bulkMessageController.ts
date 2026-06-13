@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { BulkMessageService, CreateBulkMessageData } from '../services/bulkMessageService';
-import { ContactService } from '../services/contactService';
+import { processBulkContacts } from '../services/bulkContactProcessingService';
 import { AuthRequest } from '../middleware/auth';
 
 export class BulkMessageController {
@@ -14,10 +14,9 @@ export class BulkMessageController {
         });
       }
 
-      const { name, templateId, contactsData, scheduledAt } = req.body;
+      const { name, templateId, contactsData, contacts, scheduledAt } = req.body;
       const userId = req.user?.id;
 
-      // Validation
       if (!name || !templateId || !contactsData || !Array.isArray(contactsData)) {
         return res.status(400).json({
           success: false,
@@ -32,131 +31,75 @@ export class BulkMessageController {
         });
       }
 
-      // Process contacts data - create contacts if they don't exist
-      const contactIds: string[] = [];
-      const contactResults: any[] = [];
-      const successfulContactsData: any[] = [];
-      const processedPhones = new Set<string>(); // Track processed phone numbers
+      const hasPreValidatedPayload =
+        Array.isArray(contacts) &&
+        contacts.length > 0 &&
+        contactsData.every((entry: { contactId?: string }) => !!entry.contactId);
 
-      for (const contactData of contactsData) {
-        if (!contactData.phoneNumber || !contactData.name) {
-          contactResults.push({
-            name: contactData.name || 'Unknown',
-            phoneNumber: contactData.phoneNumber || 'Unknown',
-            status: 'error',
-            error: 'Missing phoneNumber or name'
-          });
-          continue;
-        }
+      let contactIds: string[];
+      let successfulContactsData: CreateBulkMessageData['contactsData'];
+      let contactResults: any[];
+      let totalSubmitted: number;
 
-        // Check if this phone number was already processed (using original phone number for deduplication)
-        if (processedPhones.has(contactData.phoneNumber)) {
-          contactResults.push({
-            name: contactData.name,
-            phoneNumber: contactData.phoneNumber,
-            status: 'skipped',
-            error: 'Duplicate phone number - already processed'
-          });
-          continue;
-        }
-        
-        try {
-          // Try to find existing contact (ContactService will handle normalization)
-          let contact = await ContactService.getContactByPhone(contactData.phoneNumber);
-          
-          if (!contact) {
-            // Create new contact (ContactService will handle normalization)
-            contact = await ContactService.createContact({
-              phoneNumber: contactData.phoneNumber,
-              name: contactData.name,
-              email: contactData.email,
-              tags: contactData.tags || ['bulk-message'],
-              assignedTo: userId
-            });
-          }
-          
-          // Mark this phone number as processed
-          processedPhones.add(contactData.phoneNumber);
-          
-          contactIds.push(contact._id as string);
-          successfulContactsData.push({
-            contactId: contact._id as string,
-            name: contactData.name,
-            phoneNumber: contactData.phoneNumber,
-            email: contactData.email,
-            // Include all custom variables from the original data
-            ...contactData
-          });
-          
-          contactResults.push({
-            id: contact._id,
-            name: contact.name,
-            phoneNumber: contact.phoneNumber,
-            status: 'ready'
-          });
-        } catch (error: any) {
-          contactResults.push({
-            name: contactData.name,
-            phoneNumber: contactData.phoneNumber,
-            status: 'error',
-            error: error.message
-          });
-        }
+      if (hasPreValidatedPayload) {
+        // Reuse contacts prepared during validate-contacts — one batch DB check only
+        contactIds = contacts.map((id: string) => id.toString());
+        successfulContactsData = contactsData;
+        contactResults = contactsData.map((entry: { contactId: string; name: string; phoneNumber: string }) => ({
+          id: entry.contactId,
+          name: entry.name,
+          phoneNumber: entry.phoneNumber,
+          status: 'ready',
+        }));
+        totalSubmitted = contactIds.length;
+        console.log('📊 Using pre-validated contacts (skipping duplicate processing):', contactIds.length);
+      } else {
+        // Fallback for direct API use without prior validation
+        const processed = await processBulkContacts(contactsData, userId);
+        contactIds = processed.contactIds;
+        successfulContactsData = processed.contactsData;
+        contactResults = processed.contactResults;
+        totalSubmitted = processed.summary.total;
       }
 
       if (contactIds.length === 0) {
         return res.status(400).json({
           success: false,
-          message: 'No valid contacts found',
+          message: 'No usable contacts found for campaign',
           contactResults
         });
       }
 
-      console.log('🔍 ===== BULK MESSAGE CONTROLLER DEBUG =====');
-      console.log('📊 Contact processing results:');
-      console.log('  Total CSV contacts:', contactsData.length);
-      console.log('  Successful contacts:', contactIds.length);
-      console.log('  Failed contacts:', contactsData.length - contactIds.length);
-      console.log('  Contact IDs array:', contactIds);
-      console.log('  Successful contacts data count:', successfulContactsData.length);
-      
+      const excludedCount = hasPreValidatedPayload ? 0 : totalSubmitted - contactIds.length;
+
       const bulkMessageData: CreateBulkMessageData = {
         name,
         templateId,
         contacts: contactIds,
-        contactsData: successfulContactsData, // Use only successful contacts
+        contactsData: successfulContactsData,
         scheduledAt: scheduledAt ? new Date(scheduledAt) : undefined,
         createdBy: userId!
       };
-      
-      console.log('📋 Bulk message data prepared:', {
-        name: bulkMessageData.name,
-        templateId: bulkMessageData.templateId,
-        contactsCount: bulkMessageData.contacts.length,
-        contactsDataCount: bulkMessageData.contactsData.length,
-        createdBy: bulkMessageData.createdBy
-      });
-      console.log('🏁 ===== CONTROLLER DEBUG COMPLETED =====');
 
       const bulkMessage = await BulkMessageService.createBulkMessage(bulkMessageData);
 
-      // Start processing immediately if not scheduled
       if (!scheduledAt) {
-        // Process in background with progress tracking
         BulkMessageService.processBulkMessage(bulkMessage._id as string, (progress) => {
           console.log(`📊 Bulk message progress: ${progress}%`);
-        })
-          .catch(error => console.error('Bulk message processing error:', error));
+        }).catch(error => console.error('Bulk message processing error:', error));
       }
 
       res.status(201).json({
         success: true,
-        message: 'Bulk message created successfully',
+        message: excludedCount > 0
+          ? `Bulk message created with ${contactIds.length} contacts (${excludedCount} excluded)`
+          : 'Bulk message created successfully',
         data: {
           bulkMessage,
           contactResults,
           validContacts: contactIds.length,
-          totalContacts: contactsData.length
+          excludedContacts: excludedCount,
+          totalContacts: totalSubmitted
         }
       });
 
@@ -181,7 +124,6 @@ export class BulkMessageController {
         filters.status = status;
       }
       
-      // If not admin, only show user's own bulk messages
       if (req.user?.role !== 'admin') {
         filters.createdBy = userId;
       } else if (createdBy) {
@@ -230,7 +172,6 @@ export class BulkMessageController {
         });
       }
 
-      // Check if user has permission to view this bulk message
       if (req.user?.role !== 'admin' && bulkMessage.createdBy._id.toString() !== userId) {
         return res.status(403).json({
           success: false,
@@ -277,7 +218,6 @@ export class BulkMessageController {
         });
       }
 
-      // Check permissions
       if (req.user?.role !== 'admin' && bulkMessage.createdBy._id.toString() !== userId) {
         return res.status(403).json({
           success: false,
@@ -371,7 +311,6 @@ export class BulkMessageController {
         });
       }
 
-      // Check permissions
       if (req.user?.role !== 'admin' && bulkMessage.createdBy._id.toString() !== userId) {
         return res.status(403).json({
           success: false,
@@ -406,7 +345,7 @@ export class BulkMessageController {
     }
   }
 
-  // POST /api/bulk-messages/validate-contacts - Validate contacts before creating bulk message
+  // POST /api/bulk-messages/validate-contacts - Process contacts once for preview + send
   static async validateContacts(req: AuthRequest, res: Response) {
     try {
       if (!req.body || typeof req.body !== 'object') {
@@ -417,6 +356,7 @@ export class BulkMessageController {
       }
 
       const { contactsData } = req.body;
+      const userId = req.user?.id;
 
       if (!contactsData || !Array.isArray(contactsData)) {
         return res.status(400).json({
@@ -425,56 +365,17 @@ export class BulkMessageController {
         });
       }
 
-      const validationResults = [];
-
-      for (const contactData of contactsData) {
-        const result: any = {
-          originalData: contactData,
-          isValid: false,
-          errors: []
-        };
-
-        // Validate required fields
-        if (!contactData.phoneNumber) {
-          result.errors.push('Phone number is required');
-        }
-        if (!contactData.name) {
-          result.errors.push('Name is required');
-        }
-
-        if (contactData.phoneNumber) {
-          try {
-            // Check if contact already exists (ContactService will handle normalization)
-            const existingContact = await ContactService.getContactByPhone(contactData.phoneNumber);
-            if (existingContact) {
-              result.existingContact = {
-                id: existingContact._id,
-                name: existingContact.name,
-                phoneNumber: existingContact.phoneNumber
-              };
-              result.normalizedPhoneNumber = existingContact.phoneNumber;
-            }
-          } catch (error) {
-            result.errors.push('Invalid phone number format');
-          }
-        }
-
-        result.isValid = result.errors.length === 0;
-        validationResults.push(result);
-      }
-
-      const validCount = validationResults.filter(r => r.isValid).length;
+      const processed = await processBulkContacts(contactsData, userId);
 
       res.json({
         success: true,
         message: 'Contact validation completed',
         data: {
-          validationResults,
-          summary: {
-            total: contactsData.length,
-            valid: validCount,
-            invalid: contactsData.length - validCount
-          }
+          validationResults: processed.validationResults,
+          contactIds: processed.contactIds,
+          contactsData: processed.contactsData,
+          contactResults: processed.contactResults,
+          summary: processed.summary,
         }
       });
 
@@ -486,4 +387,4 @@ export class BulkMessageController {
       });
     }
   }
-} 
+}
