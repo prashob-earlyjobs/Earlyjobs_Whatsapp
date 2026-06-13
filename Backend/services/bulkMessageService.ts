@@ -83,34 +83,48 @@ export class BulkMessageService {
     }
     console.log('✅ Template found:', template.name);
 
-    // Validate contacts exist
-    console.log('🔍 Validating contacts...');
-    console.log('📱 Contact IDs to validate:', bulkData.contacts);
-    
-    const contacts = await Contact.find({ _id: { $in: bulkData.contacts } });
-    console.log('📊 Contacts found in database:', contacts.length);
-    console.log('📊 Expected contacts count:', bulkData.contacts.length);
-    
-    if (contacts.length !== bulkData.contacts.length) {
-      console.error('❌ Contact validation failed!');
-      console.error('📱 Expected contacts:', bulkData.contacts);
-      console.error('📱 Found contacts:', contacts.map(c => ({ id: c._id, name: c.name, phone: c.phoneNumber })));
-      
-      // Find which contacts are missing
-      const foundIds = contacts.map(c => (c._id as any).toString());
-      const missingIds = bulkData.contacts.filter(id => !foundIds.includes(id.toString()));
-      console.error('🚫 Missing contact IDs:', missingIds);
-      
-      throw new Error(`Some contacts not found. Expected: ${bulkData.contacts.length}, Found: ${contacts.length}, Missing: ${missingIds.length}`);
+    const uniqueContactIds = [...new Set(bulkData.contacts.map(id => id.toString()))];
+    const contacts = await Contact.find({
+      _id: { $in: uniqueContactIds },
+      isBlocked: { $ne: true },
+    });
+
+    const usableIdSet = new Set(contacts.map(c => (c._id as any).toString()));
+    const contactsDataById = new Map<string, (typeof bulkData.contactsData)[number]>();
+
+    bulkData.contactsData.forEach(entry => {
+      const id = entry.contactId?.toString();
+      if (id && !contactsDataById.has(id)) {
+        contactsDataById.set(id, entry);
+      }
+    });
+
+    const validContactIds: string[] = [];
+    const validContactsData: typeof bulkData.contactsData = [];
+
+    for (const contactId of uniqueContactIds) {
+      if (usableIdSet.has(contactId) && contactsDataById.has(contactId)) {
+        validContactIds.push(contactId);
+        validContactsData.push(contactsDataById.get(contactId)!);
+      }
     }
 
-    console.log('✅ All contacts validated successfully');
+    const excludedCount = uniqueContactIds.length - validContactIds.length;
+    if (excludedCount > 0) {
+      console.warn(`⚠️ Excluded ${excludedCount} contact(s) (missing or blocked)`);
+    }
+
+    if (validContactIds.length === 0) {
+      throw new Error('No usable contacts found for campaign');
+    }
+
+    console.log(`✅ Campaign will include ${validContactIds.length} contact(s)`);
 
     const bulkMessage = new BulkMessage({
       name: bulkData.name,
       templateId: bulkData.templateId,
-      contacts: bulkData.contacts,
-      contactsData: bulkData.contactsData,
+      contacts: validContactIds,
+      contactsData: validContactsData,
       status: 'pending',
       scheduledAt: bulkData.scheduledAt,
       createdBy: bulkData.createdBy,
@@ -205,21 +219,30 @@ export class BulkMessageService {
           });
         }
         
-        // Extract header and footer from template
-        const header = template.header?.content;
+        // Extract header and footer from template (header can be text or image URL)
+        const header = template.header?.type === 'text' ? template.header.content : undefined;
         const footer = template.footer;
-        
+        const isImageTemplate = template.header?.type === 'image' && !!template.header?.content;
+
         // Get the normalized phone number from the contact record
         const contact = await (await import('../models/Contact')).default.findById(contactData.contactId);
         const normalizedPhoneNumber = contact ? contact.phoneNumber : contactData.phoneNumber;
-        
-        // Send message via Gupshup using normalized phone number
-        const gupshupResponse = await GupshupService.sendTemplateMessage(
-          normalizedPhoneNumber,
-          renderedText,
-          header,
-          footer
-        );
+
+        // Send via image template API or text template API
+        const gupshupResponse = isImageTemplate
+          ? await GupshupService.sendImageTemplateMessage(
+              normalizedPhoneNumber,
+              renderedText,
+              template.header!.content,
+              footer,
+              { isTemplate: true, templateId: template.templateId, category: template.category, language: template.language }
+            )
+          : await GupshupService.sendTemplateMessage(
+              normalizedPhoneNumber,
+              renderedText,
+              header,
+              footer
+            );
         
         // Create or find conversation for this contact
         const { conversation } = await ConversationService.findOrCreateConversation({
@@ -228,12 +251,15 @@ export class BulkMessageService {
         });
         
         // Create individual message record in database
-        const messageContent = {
+        const messageContent: Record<string, any> = {
           text: renderedText,
           header: header || undefined,
           footer: footer || undefined
         };
-        
+        if (isImageTemplate) {
+          messageContent.mediaUrl = template.header!.content;
+        }
+
         await MessageService.createMessage({
           conversationId: (conversation._id as any).toString(),
           contactId: (contactData.contactId as any).toString(),

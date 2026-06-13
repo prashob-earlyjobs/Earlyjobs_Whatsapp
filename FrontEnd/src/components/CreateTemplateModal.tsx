@@ -42,6 +42,8 @@ const templateSchema = z.object({
   department: z.string().optional(),
   body: z.string().min(1, 'Template body is required'),
   header: z.string().optional(),
+  headerType: z.enum(['text', 'image']).optional(),
+  headerImageUrl: z.string().optional(),
   footer: z.string().optional(),
 });
 
@@ -76,6 +78,8 @@ export const CreateTemplateModal = ({ open, onClose }: CreateTemplateModalProps)
       department: '',
       body: '',
       header: '',
+      headerType: 'text',
+      headerImageUrl: '',
       footer: '',
     },
   });
@@ -83,7 +87,7 @@ export const CreateTemplateModal = ({ open, onClose }: CreateTemplateModalProps)
   // Fetch Gupshup templates
   const { data: gupshupTemplatesData, isLoading: isLoadingGupshup, error: gupshupError } = useQuery({
     queryKey: ['gupshupTemplates', { search: searchQuery, status: 'ENABLED' }],
-    queryFn: () => templateApi.getGupshupTemplates({ 
+    queryFn: () => templateApi.getGupshupTemplates({
       search: searchQuery || undefined,
       status: 'ENABLED',
       limit: 1000 
@@ -139,8 +143,9 @@ export const CreateTemplateModal = ({ open, onClose }: CreateTemplateModalProps)
       language: string;
       department?: string;
       body: string;
-      header?: string;
+      header?: string | { type: 'text' | 'image' | 'document'; content: string };
       footer?: string;
+      users?: string[];
     }) => templateApi.createCustomTemplate(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['localTemplates'] });
@@ -244,13 +249,23 @@ export const CreateTemplateModal = ({ open, onClose }: CreateTemplateModalProps)
         return;
       }
       
+      // Build header: text, image URL, or undefined
+      let header: string | { type: 'text' | 'image' | 'document'; content: string } | undefined;
+      if (data.headerType === 'image' && data.headerImageUrl?.trim()) {
+        header = { type: 'image', content: data.headerImageUrl.trim() };
+      } else if (data.header?.trim()) {
+        header = { type: 'text', content: data.header.trim() };
+      } else {
+        header = undefined;
+      }
+
       createCustomMutation.mutate({
         name: data.customName,
         category: data.category,
         language: data.language,
         department: data.department || undefined,
         body: data.body,
-        header: data.header || undefined,
+        header,
         footer: data.footer || undefined,
         users: selectedUsers.length > 0 ? selectedUsers : undefined,
       });
@@ -542,29 +557,71 @@ export const CreateTemplateModal = ({ open, onClose }: CreateTemplateModalProps)
                     />
                   </div>
 
-                  <FormField
-                    control={form.control}
-                    name="header"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
-                          Header (Optional)
-                          {isGupshupTemplateSelected && (
-                            <span className="text-xs text-muted-foreground ml-2">(From Gupshup - Cannot be modified)</span>
-                          )}
-                        </FormLabel>
-                        <FormControl>
-                          <Input 
-                            placeholder={isGupshupTemplateSelected ? "Header from Gupshup template" : "Enter header text"} 
-                            {...field} 
-                            readOnly={isGupshupTemplateSelected}
-                            className={isGupshupTemplateSelected ? "bg-muted text-muted-foreground" : ""}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  {!isGupshupTemplateSelected && (
+                    <FormField
+                      control={form.control}
+                      name="headerType"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Header type (Optional)</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value || 'text'}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Text or Image" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="text">Text</SelectItem>
+                              <SelectItem value="image">Image URL</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
+                  {form.watch('headerType') === 'image' && !isGupshupTemplateSelected ? (
+                    <FormField
+                      control={form.control}
+                      name="headerImageUrl"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Header image URL (Optional)</FormLabel>
+                          <FormControl>
+                            <Input
+                              placeholder="https://example.com/image.png"
+                              {...field}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  ) : (
+                    <FormField
+                      control={form.control}
+                      name="header"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>
+                            Header (Optional)
+                            {isGupshupTemplateSelected && (
+                              <span className="text-xs text-muted-foreground ml-2">(From Gupshup - Cannot be modified)</span>
+                            )}
+                          </FormLabel>
+                          <FormControl>
+                            <Input
+                              placeholder={isGupshupTemplateSelected ? "Header from Gupshup template" : "Enter header text"}
+                              {...field}
+                              readOnly={isGupshupTemplateSelected}
+                              className={isGupshupTemplateSelected ? "bg-muted text-muted-foreground" : ""}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
 
                   <FormField
                     control={form.control}

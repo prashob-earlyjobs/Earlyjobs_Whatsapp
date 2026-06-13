@@ -291,6 +291,89 @@ export class GupshupService {
   }
 
   /**
+   * Send image template message via Gupshup Media API (SENDMEDIAMESSAGE).
+   * Used when template has header type "image" with a media URL.
+   * Ref: mediaapi.smsgupshup.com with method=SENDMEDIAMESSAGE, msg_type=IMAGE, caption, media_url, isTemplate=true
+   */
+  static async sendImageTemplateMessage(
+    phoneNumber: string,
+    caption: string,
+    mediaUrl: string,
+    footer?: string,
+    templateConditions?: {
+      isTemplate?: boolean;
+      templateId?: string;
+      category?: string;
+      language?: string;
+    }
+  ): Promise<GupshupMessage> {
+    this.validateTemplateCredentials();
+
+    const userId = this.templateUserId;
+    const password = this.templatePassword;
+
+    const params: Record<string, string> = {
+      userid: userId!,
+      password: password!,
+      v: "1.1",
+      format: "json",
+      method: "SENDMEDIAMESSAGE",
+      send_to: phoneNumber.replace(/\+/g, ""),
+      msg_type: "IMAGE",
+      caption: caption,
+      media_url: mediaUrl,
+      isTemplate: templateConditions?.isTemplate !== false ? "true" : "false",
+    };
+
+    if (footer) {
+      params["footer"] = footer;
+    }
+    if (templateConditions?.templateId) {
+      params["templateId"] = templateConditions.templateId;
+    }
+    if (templateConditions?.category) {
+      params["category"] = templateConditions.category;
+    }
+    if (templateConditions?.language) {
+      params["language"] = templateConditions.language;
+    }
+
+    try {
+      console.log("🔗 Sending Gupshup image template message to:", phoneNumber);
+      console.log("📡 Params:", { ...params, password: "***", caption: caption.substring(0, 50) + "..." });
+
+      const response = await axios.get(this.baseUrl, { params });
+
+      if (response.data.response) {
+        const { response: gupshupResponse } = response.data;
+        if (gupshupResponse.status === "success") {
+          return {
+            messageId: gupshupResponse.id || "unknown",
+            status: "sent",
+            timestamp: new Date().toISOString(),
+            phone: gupshupResponse.phone,
+          };
+        } else {
+          console.error("❌ Gupshup image template error:", gupshupResponse);
+          if (gupshupResponse.id === "102") {
+            throw new Error("Authentication failed due to invalid userId or password");
+          }
+          throw new Error(
+            `Gupshup image template error: ${gupshupResponse.details || gupshupResponse.status}`
+          );
+        }
+      }
+      throw new Error("Invalid response format from Gupshup");
+    } catch (error: any) {
+      console.error("❌ Gupshup image template message error:", error.message);
+      if (error.response?.data) {
+        console.error("❌ Gupshup error details:", error.response.data);
+      }
+      throw new Error(`Failed to send image template message: ${error.message}`);
+    }
+  }
+
+  /**
    * Send template message with enhanced validation and conditions
    */
   static async sendTemplateMessageWithConditions(

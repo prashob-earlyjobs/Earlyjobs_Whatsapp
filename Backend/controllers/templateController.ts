@@ -380,6 +380,19 @@ export class TemplateController {
       const variableMatches = body.match(/\{\{(\w+|\d+)\}\}/g) || [];
       const variables = variableMatches.map((match: string) => match.replace(/[{}]/g, ''));
 
+      // Normalize header: support string (text) or { type: 'text'|'image'|'document', content: string }
+      let normalizedHeader: CreateTemplateData['header'] = undefined;
+      if (header != null && header !== '') {
+        if (typeof header === 'string') {
+          normalizedHeader = { type: 'text', content: header };
+        } else if (typeof header === 'object' && 'type' in header && 'content' in header) {
+          const h = header as { type: string; content: string };
+          if (['text', 'image', 'document'].includes(h.type) && typeof h.content === 'string') {
+            normalizedHeader = { type: h.type as 'text' | 'image' | 'document', content: h.content };
+          }
+        }
+      }
+
       // Generate unique template ID
       const templateId = `custom_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -394,7 +407,7 @@ export class TemplateController {
           text: body,
           variables
         },
-        header,
+        header: normalizedHeader,
         footer,
         buttons,
         createdBy: req.user.id,

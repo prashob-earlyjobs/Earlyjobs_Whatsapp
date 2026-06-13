@@ -618,7 +618,7 @@ export const templateApi = {
     language: string;
     department?: string;
     body: string;
-    header?: string;
+    header?: string | { type: 'text' | 'image' | 'document'; content: string };
     footer?: string;
     buttons?: Array<{
       type: 'quick_reply' | 'url' | 'phone';
@@ -824,7 +824,16 @@ export interface BulkMessageReportPayload {
 export const bulkMessageApi = {
   // Validate contacts before creating bulk message
   async validateContacts(contactsData: ContactData[]): Promise<ApiResponse<{
-    validationResults: any[];
+    validationResults: Array<{
+      originalData: ContactData;
+      isValid: boolean;
+      errors: string[];
+      normalizedPhoneNumber?: string;
+      contactId?: string;
+    }>;
+    contactIds: string[];
+    contactsData: Array<ContactData & { contactId: string }>;
+    contactResults: any[];
     summary: {
       total: number;
       valid: number;
@@ -837,16 +846,18 @@ export const bulkMessageApi = {
     });
   },
 
-  // Create and send bulk message
+  // Create and send bulk message (pass contacts + contactsData from validate step)
   async createBulkMessage(data: {
     name: string;
     templateId: string;
-    contactsData: ContactData[];
+    contacts: string[];
+    contactsData: Array<ContactData & { contactId: string }>;
     scheduledAt?: string;
   }): Promise<ApiResponse<{
     bulkMessage: BulkMessage;
     contactResults: any[];
     validContacts: number;
+    excludedContacts: number;
     totalContacts: number;
   }>> {
     return apiRequest('/bulk-messages', {
